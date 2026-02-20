@@ -1,5 +1,6 @@
 package io.github.jukomu.picacomic.core.config;
 
+import io.github.jukomu.picacomic.api.enums.ImageQuality;
 import io.github.jukomu.picacomic.core.cache.CacheKey;
 import io.github.jukomu.picacomic.core.cache.CachePool;
 
@@ -40,6 +41,7 @@ public final class PicaConfiguration {
     private final int concurrentPhotoDownloads;
     // 同时下载的图片数
     private final int concurrentImageDownloads;
+    private final ImageQuality imageQuality;
 
     private PicaConfiguration(Builder builder) {
         this.domains = Collections.unmodifiableList(builder.domains);
@@ -52,6 +54,7 @@ public final class PicaConfiguration {
         this.cachePool = new CachePool<>(builder.cacheSize);
         this.concurrentPhotoDownloads = builder.concurrentPhotoDownloads;
         this.concurrentImageDownloads = builder.concurrentImageDownloads;
+        this.imageQuality = builder.imageQuality;
     }
 
 
@@ -95,6 +98,10 @@ public final class PicaConfiguration {
         return concurrentImageDownloads;
     }
 
+    public ImageQuality getImageQuality() {
+        return imageQuality;
+    }
+
     /**
      * 用于创建 PicaConfiguration 实例的 Builder
      */
@@ -109,6 +116,7 @@ public final class PicaConfiguration {
         private int cacheSize = 100 * 1024 * 1024;
         private int concurrentPhotoDownloads = 3;
         private int concurrentImageDownloads = 20;
+        private ImageQuality imageQuality = ImageQuality.MEDIUM;
 
 
         public Builder domains(List<String> domains) {
@@ -168,6 +176,11 @@ public final class PicaConfiguration {
         public Builder concurrentImageDownloads(int size) {
             if (size < 0) throw new IllegalArgumentException("Concurrent image uploads must be non-negative.");
             this.concurrentImageDownloads = size;
+            return this;
+        }
+
+        public Builder imageQuality(ImageQuality imageQuality) {
+            this.imageQuality = imageQuality;
             return this;
         }
 

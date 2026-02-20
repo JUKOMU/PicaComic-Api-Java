@@ -1,9 +1,11 @@
 package io.github.jukomu.picacomic.core.client;
 
+import com.google.gson.JsonObject;
 import io.github.jukomu.picacomic.api.client.IPicaClient;
+import io.github.jukomu.picacomic.api.enums.ImageQuality;
 import io.github.jukomu.picacomic.api.exception.NetworkException;
 import io.github.jukomu.picacomic.api.exception.ResponseException;
-import io.github.jukomu.picacomic.api.model.PicaUserInfo;
+import io.github.jukomu.picacomic.api.model.*;
 import io.github.jukomu.picacomic.core.cache.CacheKey;
 import io.github.jukomu.picacomic.core.cache.CachePool;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
@@ -13,18 +15,17 @@ import io.github.jukomu.picacomic.core.net.model.PicaResponse;
 import io.github.jukomu.picacomic.core.net.provider.PicaDomainManager;
 import io.github.jukomu.picacomic.core.util.JsonUtils;
 import okhttp3.*;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import static io.github.jukomu.picacomic.core.constant.PicaConstants.*;
-import static io.github.jukomu.picacomic.core.parser.PicaParser.parserUserInfo;
+import static io.github.jukomu.picacomic.core.parser.PicaParser.*;
 
 /**
  * @author JUKOMU
@@ -45,6 +46,7 @@ public final class PicaClient implements IPicaClient {
     private final CachePool<CacheKey, Object> cachePool;
     private final int concurrentPhotoDownloads;
     private final int concurrentImageDownloads;
+    private final ImageQuality imageQuality;
 
     public PicaClient(PicaConfiguration config, OkHttpClient httpClient, PicaDomainManager domainManager) {
         this.token = null;
@@ -75,6 +77,8 @@ public final class PicaClient implements IPicaClient {
             this.domainManager.setInitialized(true);
             this.initialize();
         });
+        // 图片质量
+        this.imageQuality = config.getImageQuality();
     }
 
     /**
@@ -94,6 +98,186 @@ public final class PicaClient implements IPicaClient {
     // == 核心数据获取层 ==
 
     @Override
+    public PicaAlbum getAlbum(String albumId) {
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addPathSegment(albumId)
+                .build();
+        List<PicaPhoto> photoList = getPhotoList(albumId);
+        try {
+            PicaResponse response = executeGetRequest(url);
+            JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("comic").getAsJsonObject();
+            return parserAlbum(JsonUtils.toJsonString(jsonObject), photoList);
+        } catch (Exception e) {
+            logger.error("Failed to get album with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    public List<PicaPhoto> getPhotoList(String albumId) {
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addPathSegment(albumId)
+                .addPathSegment("eps")
+                .addQueryParameter("page", "1")
+                .build();
+        try {
+            PicaResponse response = executeGetRequest(url);
+            JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("eps").getAsJsonObject();
+            Object[] parsered = parserPhotoList(JsonUtils.toJsonString(jsonObject), albumId);
+            List<PicaPhoto> photos = new ArrayList<>();
+            photos.addAll((Collection<? extends PicaPhoto>) parsered[0]);
+            while (parsered[1] != null) {
+                HttpUrl url2 = newHttpUrlBuilder()
+                        .addPathSegment("comics")
+                        .addPathSegment(albumId)
+                        .addPathSegment("eps")
+                        .addQueryParameter("page", String.valueOf(parsered[1]))
+                        .build();
+                PicaResponse response2 = executeGetRequest(url2);
+                JsonObject jsonObject2 = JsonUtils.toJsonObject(response2.getData()).get("eps").getAsJsonObject();
+                parsered = parserPhotoList(JsonUtils.toJsonString(jsonObject2), albumId);
+                photos.addAll((Collection<? extends PicaPhoto>) parsered[0]);
+            }
+            return photos;
+        } catch (Exception e) {
+            logger.error("Failed to get photo list with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public PicaPhoto getPhoto(String albumId, int order) {
+        PicaAlbum album = getAlbum(albumId);
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addPathSegment(albumId)
+                .addPathSegment("order")
+                .addPathSegment(String.valueOf(order))
+                .addPathSegment("pages")
+                .addQueryParameter("page", "1")
+                .build();
+        try {
+            PicaResponse response = executeGetRequest(url);
+            JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("pages").getAsJsonObject();
+            Object[] parsered = parserImageList(JsonUtils.toJsonString(jsonObject));
+            List<PicaImage> images = new ArrayList<>();
+            images.addAll((Collection<? extends PicaImage>) parsered[0]);
+            while (parsered[1] != null) {
+                HttpUrl url2 = newHttpUrlBuilder()
+                        .addPathSegment("comics")
+                        .addPathSegment(albumId)
+                        .addPathSegment("order")
+                        .addPathSegment(String.valueOf(order))
+                        .addPathSegment("pages")
+                        .addQueryParameter("page", String.valueOf(parsered[1]))
+                        .build();
+                PicaResponse response2 = executeGetRequest(url2);
+                JsonObject jsonObject2 = JsonUtils.toJsonObject(response2.getData()).get("pages").getAsJsonObject();
+                parsered = parserImageList(JsonUtils.toJsonString(jsonObject2));
+                images.addAll((Collection<? extends PicaImage>) parsered[0]);
+            }
+
+            String photoId = JsonUtils.toJsonObject(response.getData()).getAsJsonObject("ep").get("_id").getAsString();
+            PicaPhoto albumPhoto = album.getPhoto(photoId);
+            return new PicaPhoto(albumId, photoId, albumPhoto.getTitle(), albumPhoto.getUpdatedAt(), albumPhoto.getOrder(), images);
+        } catch (Exception e) {
+            logger.error("Failed to get photo with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public byte[] fetchImageBytes(PicaImage image) {
+        return new byte[0];
+    }
+
+    @Override
+    public PicaContentPage search(SearchQuery query) {
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addPathSegment("advanced-search")
+                .addQueryParameter("page", String.valueOf(query.getPage()))
+                .build();
+        Objects.requireNonNull(query.getKeyword(), "Keyword cannot be null");
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("keyword", query.getKeyword());
+        params.put("sort", query.getOrderBy().getValue());
+        if (query.getCategories() != null && !query.getCategories().isEmpty()) {
+            params.put("categories", query.getCategories());
+        }
+
+        String jsonBody = JsonUtils.toJsonString(params);
+
+        RequestBody body = RequestBody.create(
+                jsonBody,
+                MediaType.get("application/json; charset=UTF-8")
+        );
+
+        try {
+            PicaResponse response = executePostRequest(url, body);
+            JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("comics").getAsJsonObject();
+            return parserContentPage(JsonUtils.toJsonString(jsonObject));
+        } catch (Exception e) {
+            logger.error("Failed to search with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public PicaContentPage getFavorites(SearchQuery query) {
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("users")
+                .addPathSegment("favourite")
+                .addQueryParameter("page", String.valueOf(query.getPage()))
+                .addQueryParameter("s", query.getOrderBy().getValue())
+                .build();
+        try {
+            PicaResponse response = executeGetRequest(url);
+            JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("comics").getAsJsonObject();
+            return parserContentPage(JsonUtils.toJsonString(jsonObject));
+        } catch (Exception e) {
+            logger.error("Failed to get favorites with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public PicaContentPage getCategories(SearchQuery query) {
+        HttpUrl.Builder url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addQueryParameter("page", String.valueOf(query.getPage()))
+                .addQueryParameter("s", query.getOrderBy().getValue());
+        // 可选参数
+        if (query.getCategories() != null && !query.getCategories().isEmpty()) {
+            // 只选第一个分类
+            url.addQueryParameter("c", query.getCategories().get(0).getValue());
+        }
+        if (StringUtils.isNotBlank(query.getTag())) {
+            url.addQueryParameter("t", query.getTag());
+        }
+        if (StringUtils.isNotBlank(query.getAuthor())) {
+            url.addQueryParameter("a", query.getAuthor());
+        }
+        if (StringUtils.isNotBlank(query.getTranslator())) {
+            url.addQueryParameter("ct", query.getTag());
+        }
+        if (StringUtils.isNotBlank(query.getCreator())) {
+            url.addQueryParameter("ca", query.getCreator());
+        }
+
+        try {
+            PicaResponse response = executeGetRequest(url.build());
+            JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("comics").getAsJsonObject();
+            return parserContentPage(JsonUtils.toJsonString(jsonObject));
+        } catch (Exception e) {
+            logger.error("Failed to get category with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
     public PicaUserInfo getUserInfo() {
         HttpUrl url = newHttpUrlBuilder()
                 .addPathSegment("users")
@@ -101,7 +285,8 @@ public final class PicaClient implements IPicaClient {
                 .build();
         try {
             PicaResponse response = executeGetRequest(url);
-            return parserUserInfo(response.getData());
+            JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("user").getAsJsonObject();
+            return parserUserInfo(JsonUtils.toJsonString(jsonObject));
         } catch (Exception e) {
             logger.error("Failed to get profile with error message :{}", e.getMessage());
             throw e;
@@ -141,7 +326,7 @@ public final class PicaClient implements IPicaClient {
     }
 
     private PicaResponse executeGetRequest(HttpUrl url) {
-        Map<String, String> headers = buildHeaders(url, "GET", token, null);
+        Map<String, String> headers = buildHeaders(url, "GET", token, imageQuality.getValue());
         Request request = addAppHeader(getGetRequestBuilder(url), headers).build();
         PicaResponse response = executeRequest(request);
         response.requireSuccess();
@@ -149,7 +334,7 @@ public final class PicaClient implements IPicaClient {
     }
 
     private PicaResponse executePostRequest(HttpUrl url, RequestBody requestBody) {
-        Map<String, String> headers = buildHeaders(url, "POST", token, null);
+        Map<String, String> headers = buildHeaders(url, "POST", token, imageQuality.getValue());
         Request request = addAppHeader(getPostRequestBuilder(url, requestBody), headers).build();
         PicaResponse response = executeRequest(request);
         response.requireSuccess();

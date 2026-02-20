@@ -1,11 +1,11 @@
 package io.github.jukomu.picacomic.core.parser;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import io.github.jukomu.picacomic.api.exception.ParseResponseException;
-import io.github.jukomu.picacomic.api.model.PicaAvatar;
-import io.github.jukomu.picacomic.api.model.PicaUserInfo;
+import io.github.jukomu.picacomic.api.model.*;
+import io.github.jukomu.picacomic.core.util.JsonUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
@@ -23,6 +23,310 @@ public class PicaParser {
     }
 
     /**
+     * 解析本子详情页的API JSON响应
+     *
+     * @param json API返回的JSON字符串
+     * @return 一个 PicaAlbum 对象
+     */
+    public static PicaAlbum parserAlbum(String json, List<PicaPhoto> photos) {
+        try {
+            JsonObject jsonObject = JsonUtils.toJsonObject(json);
+
+            String id = "";
+            if (jsonObject.has("_id") && !jsonObject.get("_id").isJsonNull()) {
+                id = StringUtils.defaultIfBlank(jsonObject.get("_id").getAsString(), "");
+            }
+
+            PicaUserInfo creator = null;
+            if (jsonObject.has("_creator") && !jsonObject.get("_creator").isJsonNull()) {
+                JsonObject creatorObj = jsonObject.get("_creator").getAsJsonObject();
+                creator = parserUserInfo(JsonUtils.toJsonString(creatorObj));
+            }
+
+            String title = "";
+            if (jsonObject.has("title") && !jsonObject.get("title").isJsonNull()) {
+                title = StringUtils.defaultIfBlank(jsonObject.get("title").getAsString(), "");
+            }
+
+            String description = "";
+            if (jsonObject.has("description") && !jsonObject.get("description").isJsonNull()) {
+                description = StringUtils.defaultIfBlank(jsonObject.get("description").getAsString(), "");
+            }
+
+            PicaImage thumb = null;
+            if (jsonObject.has("thumb") && !jsonObject.get("thumb").isJsonNull()) {
+                JsonObject thumbObj = jsonObject.get("thumb").getAsJsonObject();
+                String originalName = "";
+                String path = "";
+                String fileServer = "";
+                if (thumbObj.has("originalName") && !thumbObj.get("originalName").isJsonNull()) {
+                    originalName = StringUtils.defaultIfBlank(thumbObj.get("originalName").getAsString(), "");
+                }
+                if (thumbObj.has("path") && !thumbObj.get("path").isJsonNull()) {
+                    path = StringUtils.defaultIfBlank(thumbObj.get("path").getAsString(), "");
+                }
+                if (thumbObj.has("fileServer") && !thumbObj.get("fileServer").isJsonNull()) {
+                    fileServer = StringUtils.defaultIfBlank(thumbObj.get("fileServer").getAsString(), "");
+                }
+                thumb = new PicaImage(originalName, path, fileServer);
+            }
+
+            String author = "";
+            if (jsonObject.has("author") && !jsonObject.get("author").isJsonNull()) {
+                author = StringUtils.defaultIfBlank(jsonObject.get("author").getAsString(), "");
+            }
+
+            String chineseTeam = "";
+            if (jsonObject.has("chineseTeam") && !jsonObject.get("chineseTeam").isJsonNull()) {
+                chineseTeam = StringUtils.defaultIfBlank(jsonObject.get("chineseTeam").getAsString(), "");
+            }
+
+            List<String> categories = new ArrayList<>();
+            if (jsonObject.has("categories") && jsonObject.get("categories").isJsonArray()) {
+                for (JsonElement element : jsonObject.getAsJsonArray("categories")) {
+                    categories.add(element.getAsString());
+                }
+            }
+
+            List<String> tags = new ArrayList<>();
+            if (jsonObject.has("tags") && jsonObject.get("tags").isJsonArray()) {
+                for (JsonElement element : jsonObject.getAsJsonArray("tags")) {
+                    tags.add(element.getAsString());
+                }
+            }
+
+            int pagesCount = 0;
+            if (jsonObject.has("pagesCount") && !jsonObject.get("pagesCount").isJsonNull()) {
+                pagesCount = jsonObject.get("pagesCount").getAsInt();
+            }
+
+            int epsCount = 0;
+            if (jsonObject.has("epsCount") && !jsonObject.get("epsCount").isJsonNull()) {
+                epsCount = jsonObject.get("epsCount").getAsInt();
+            }
+
+            boolean finished = false;
+            if (jsonObject.has("finished") && !jsonObject.get("finished").isJsonNull()) {
+                finished = jsonObject.get("finished").getAsBoolean();
+            }
+
+            String updatedAt = "";
+            if (jsonObject.has("updated_at") && !jsonObject.get("updated_at").isJsonNull()) {
+                updatedAt = StringUtils.defaultIfBlank(jsonObject.get("updated_at").getAsString(), "");
+            }
+
+            String createdAt = "";
+            if (jsonObject.has("created_at") && !jsonObject.get("created_at").isJsonNull()) {
+                createdAt = StringUtils.defaultIfBlank(jsonObject.get("created_at").getAsString(), "");
+            }
+
+            boolean allowDownload = false;
+            if (jsonObject.has("allowDownload") && !jsonObject.get("allowDownload").isJsonNull()) {
+                allowDownload = jsonObject.get("allowDownload").getAsBoolean();
+            }
+
+            boolean allowComment = false;
+            if (jsonObject.has("allowComment") && !jsonObject.get("allowComment").isJsonNull()) {
+                allowComment = jsonObject.get("allowComment").getAsBoolean();
+            }
+
+            int totalLikes = 0;
+            if (jsonObject.has("totalLikes") && !jsonObject.get("totalLikes").isJsonNull()) {
+                totalLikes = jsonObject.get("totalLikes").getAsInt();
+            }
+
+            int totalViews = 0;
+            if (jsonObject.has("totalViews") && !jsonObject.get("totalViews").isJsonNull()) {
+                totalViews = jsonObject.get("totalViews").getAsInt();
+            }
+
+            int totalComments = 0;
+            if (jsonObject.has("totalComments") && !jsonObject.get("totalComments").isJsonNull()) {
+                totalComments = jsonObject.get("totalComments").getAsInt();
+            }
+
+            int viewsCount = 0;
+            if (jsonObject.has("viewsCount") && !jsonObject.get("viewsCount").isJsonNull()) {
+                viewsCount = jsonObject.get("viewsCount").getAsInt();
+            }
+
+            int likesCount = 0;
+            if (jsonObject.has("likesCount") && !jsonObject.get("likesCount").isJsonNull()) {
+                likesCount = jsonObject.get("likesCount").getAsInt();
+            }
+
+            int commentsCount = 0;
+            if (jsonObject.has("commentsCount") && !jsonObject.get("commentsCount").isJsonNull()) {
+                commentsCount = jsonObject.get("commentsCount").getAsInt();
+            }
+
+            boolean isFavourite = false;
+            if (jsonObject.has("isFavourite") && !jsonObject.get("isFavourite").isJsonNull()) {
+                isFavourite = jsonObject.get("isFavourite").getAsBoolean();
+            }
+
+            boolean isLiked = false;
+            if (jsonObject.has("isLiked") && !jsonObject.get("isLiked").isJsonNull()) {
+                isLiked = jsonObject.get("isLiked").getAsBoolean();
+            }
+
+            return new PicaAlbum(
+                    id,
+                    creator,
+                    title,
+                    description,
+                    thumb,
+                    author,
+                    chineseTeam,
+                    categories,
+                    tags,
+                    pagesCount,
+                    epsCount,
+                    finished,
+                    updatedAt,
+                    createdAt,
+                    allowDownload,
+                    allowComment,
+                    totalLikes,
+                    totalViews,
+                    totalComments,
+                    viewsCount,
+                    likesCount,
+                    commentsCount,
+                    isFavourite,
+                    isLiked,
+                    photos);
+        } catch (Exception e) {
+            throw new ParseResponseException("Failed to parse album API JSON", e);
+        }
+    }
+
+    public static Object[] parserPhotoList(String json, String albumId) {
+        try {
+            JsonObject jsonObject = JsonUtils.toJsonObject(json);
+
+            List<PicaPhoto> photos = new ArrayList<>();
+            JsonArray docs = jsonObject.getAsJsonArray("docs");
+            for (JsonElement doc1 : docs) {
+                JsonObject doc = doc1.getAsJsonObject();
+
+                String id = "";
+                if (doc.has("_id") && !doc.get("_id").isJsonNull()) {
+                    id = StringUtils.defaultIfBlank(doc.get("_id").getAsString(), "");
+                } else if (doc.has("id") && !doc.get("id").isJsonNull()) {
+                    id = StringUtils.defaultIfBlank(doc.get("id").getAsString(), "");
+                }
+
+                int order = 1;
+                if (doc.has("order") && !doc.get("order").isJsonNull()) {
+                    order = doc.get("order").getAsInt();
+                }
+
+                String title = "";
+                if (doc.has("title") && !doc.get("title").isJsonNull()) {
+                    title = StringUtils.defaultIfBlank(doc.get("title").getAsString(), "");
+                }
+
+                String updatedAt = "";
+                if (doc.has("updated_at") && !doc.get("updated_at").isJsonNull()) {
+                    updatedAt = StringUtils.defaultIfBlank(doc.get("updated_at").getAsString(), "");
+                }
+                PicaPhoto photo = new PicaPhoto(albumId, id, title, updatedAt, order, null);
+                photos.add(photo);
+            }
+
+            int page = jsonObject.get("page").getAsInt();
+            int pages = jsonObject.get("pages").getAsInt();
+            if (page < pages) {
+                return new Object[]{photos, page + 1};
+            }
+            return new Object[]{photos, null};
+        } catch (Exception e) {
+            throw new ParseResponseException("Failed to parse photo list API JSON", e);
+        }
+    }
+
+    public static Object[] parserImageList(String json) {
+        try {
+            JsonObject jsonObject = JsonUtils.toJsonObject(json);
+
+            List<PicaImage> images = new ArrayList<>();
+            JsonArray docs = jsonObject.getAsJsonArray("docs");
+            for (JsonElement doc1 : docs) {
+                JsonObject doc2 = doc1.getAsJsonObject();
+                JsonObject doc = doc2.getAsJsonObject("media");
+
+                String originalName = "";
+                String path = "";
+                String fileServer = "";
+                if (doc.has("originalName") && !doc.get("originalName").isJsonNull()) {
+                    originalName = StringUtils.defaultIfBlank(doc.get("originalName").getAsString(), "");
+                }
+                if (doc.has("path") && !doc.get("path").isJsonNull()) {
+                    path = StringUtils.defaultIfBlank(doc.get("path").getAsString(), "");
+                }
+                if (doc.has("fileServer") && !doc.get("fileServer").isJsonNull()) {
+                    fileServer = StringUtils.defaultIfBlank(doc.get("fileServer").getAsString(), "");
+                }
+                PicaImage picaImage = new PicaImage(originalName, path, fileServer);
+                images.add(picaImage);
+            }
+
+            int page = jsonObject.get("page").getAsInt();
+            int pages = jsonObject.get("pages").getAsInt();
+            if (page < pages) {
+                return new Object[]{images, page + 1};
+            }
+            return new Object[]{images, null};
+        } catch (Exception e) {
+            throw new ParseResponseException("Failed to parse image list API JSON", e);
+        }
+    }
+
+    /**
+     * 解析包含本子的页面的API JSON响应
+     *
+     * @param json API返回的JSON字符串
+     * @return 一个 PicaContentPage 对象
+     */
+    public static PicaContentPage parserContentPage(String json) {
+        try {
+            JsonObject jsonObject = JsonUtils.toJsonObject(json);
+
+            List<PicaAlbum> albums = new ArrayList<>();
+            JsonArray docs = jsonObject.getAsJsonArray("docs");
+            for (JsonElement doc : docs) {
+                PicaAlbum album = parserAlbum(JsonUtils.toJsonString(doc), null);
+                albums.add(album);
+            }
+
+            int limit = 20;
+            if (jsonObject.has("limit") && !jsonObject.get("limit").isJsonNull()) {
+                limit = jsonObject.get("limit").getAsInt();
+            }
+
+            int page = 1;
+            if (jsonObject.has("page") && !jsonObject.get("page").isJsonNull()) {
+                page = jsonObject.get("page").getAsInt();
+            }
+
+            int pages = 1;
+            if (jsonObject.has("pages") && !jsonObject.get("pages").isJsonNull()) {
+                pages = jsonObject.get("pages").getAsInt();
+            }
+
+            int total = 1;
+            if (jsonObject.has("total") && !jsonObject.get("total").isJsonNull()) {
+                total = jsonObject.get("total").getAsInt();
+            }
+
+            return new PicaContentPage(page, pages, total, limit, albums);
+        } catch (Exception e) {
+            throw new ParseResponseException("Failed to parse page API JSON", e);
+        }
+    }
+
+    /**
      * 解析用户页的API JSON响应
      *
      * @param json API返回的JSON字符串
@@ -30,7 +334,7 @@ public class PicaParser {
      */
     public static PicaUserInfo parserUserInfo(String json) {
         try {
-            JsonObject jsonObject = JsonParser.parseString(json).getAsJsonObject().get("user").getAsJsonObject();
+            JsonObject jsonObject = JsonUtils.toJsonObject(json);
 
             String id = "";
             if (jsonObject.has("_id") && !jsonObject.get("_id").isJsonNull()) {
@@ -72,9 +376,9 @@ public class PicaParser {
                 verified = jsonObject.get("verified").getAsBoolean();
             }
 
-            int exp = 0;
+            long exp = 0;
             if (jsonObject.has("exp") && !jsonObject.get("exp").isJsonNull()) {
-                exp = jsonObject.get("exp").getAsInt();
+                exp = jsonObject.get("exp").getAsLong();
             }
 
             int level = 0;
@@ -99,7 +403,7 @@ public class PicaParser {
                 isPunched = jsonObject.get("isPunched").getAsBoolean();
             }
 
-            PicaAvatar picaAvatar = null;
+            PicaImage picaImage = null;
             if (jsonObject.has("avatar") && !jsonObject.get("avatar").isJsonNull()) {
                 JsonObject avatar = jsonObject.get("avatar").getAsJsonObject();
                 String originalName = "";
@@ -114,7 +418,7 @@ public class PicaParser {
                 if (avatar.has("fileServer") && !avatar.get("fileServer").isJsonNull()) {
                     fileServer = StringUtils.defaultIfBlank(avatar.get("fileServer").getAsString(), "");
                 }
-                picaAvatar = new PicaAvatar(originalName, path, fileServer);
+                picaImage = new PicaImage(originalName, path, fileServer);
             }
 
             return new PicaUserInfo(
@@ -130,11 +434,11 @@ public class PicaParser {
                     level,
                     characters,
                     createdAt,
-                    picaAvatar,
+                    picaImage,
                     isPunched);
 
         } catch (Exception e) {
-            throw new ParseResponseException("Failed to parse album API JSON", e);
+            throw new ParseResponseException("Failed to parse user API JSON", e);
         }
     }
 }

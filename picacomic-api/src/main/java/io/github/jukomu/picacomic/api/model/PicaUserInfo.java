@@ -17,11 +17,11 @@ public record PicaUserInfo(
         String gender, // m, f, bot
         String title,
         boolean verified,
-        int exp,
+        long exp,
         int level,
         List<String> characters,
         String createdAt,
-        PicaAvatar avatar,
+        PicaImage avatar,
         boolean isPunched
 ) {
     /**
@@ -108,7 +108,7 @@ public record PicaUserInfo(
      *
      * @return 经验值
      */
-    public int getExp() {
+    public long getExp() {
         return exp;
     }
 
@@ -144,7 +144,7 @@ public record PicaUserInfo(
      *
      * @return 头像
      */
-    public PicaAvatar getAvatar() {
+    public PicaImage getAvatar() {
         return avatar;
     }
 

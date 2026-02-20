@@ -15,6 +15,10 @@ public final class PicaConstants {
         // 防止实例化
     }
 
+    // == 分页 ==
+    public static final int PAGE_SIZE_CONTENT_PAGE = 20;
+    public static final int PAGE_SIZE_PHOTO_IMAGE = 40;
+
     // == 网络与协议 ==
     public static final String PROTOCOL_HTTPS = "https://";
     public static final String PLACEHOLDER_HOST = "pica-placeholder.domain.com";
