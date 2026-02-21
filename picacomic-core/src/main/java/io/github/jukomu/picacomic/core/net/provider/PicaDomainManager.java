@@ -3,6 +3,7 @@ package io.github.jukomu.picacomic.core.net.provider;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -21,6 +22,8 @@ public final class PicaDomainManager {
 
     private final CopyOnWriteArrayList<String> domains;
     private final ConcurrentHashMap<String, AtomicInteger> failureCounts = new ConcurrentHashMap<>();
+    // 记录需要强制走代理的域名 (被墙的图片域名)
+    private final Set<String> blockedDomains = ConcurrentHashMap.newKeySet();
     private volatile boolean initialized = false;
     private volatile CountDownLatch initLatch = new CountDownLatch(1);
 
@@ -63,6 +66,20 @@ public final class PicaDomainManager {
         if (count != null) {
             count.incrementAndGet();
         }
+    }
+
+    /**
+     * 标记一个域名为"被阻断"，后续针对该域名的请求建议直接走代理。
+     */
+    public void markDomainAsBlocked(String domain) {
+        blockedDomains.add(domain);
+    }
+
+    /**
+     * 检查域名是否已被标记为阻断。
+     */
+    public boolean isDomainBlocked(String domain) {
+        return blockedDomains.contains(domain);
     }
 
     /**

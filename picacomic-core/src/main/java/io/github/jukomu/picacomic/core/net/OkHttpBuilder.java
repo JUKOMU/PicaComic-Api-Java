@@ -45,7 +45,7 @@ public final class OkHttpBuilder {
         builder.writeTimeout(config.getTimeout());
         builder.cookieJar(cookieJar);
 
-        builder.addInterceptor(new RetryAndDomainRedirectInterceptor(config.getRetryTimes(), domainManager));
+        builder.addInterceptor(new RetryAndDomainRedirectInterceptor(config.getRetryTimes(), domainManager, config.getProxyFallbackThreshold()));
         builder.retryOnConnectionFailure(false);
         OkHttpClient client = builder.build();
 

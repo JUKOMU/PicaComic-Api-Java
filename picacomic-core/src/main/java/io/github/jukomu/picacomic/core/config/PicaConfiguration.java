@@ -31,6 +31,8 @@ public final class PicaConfiguration {
     private final Duration timeout;
     // 重试次数
     private final int retryTimes;
+    // 代理回退阈值
+    private final int proxyFallbackThreshold;
     // 请求的线程池
     private final ExecutorService executor;
     // 线程池大小
@@ -49,6 +51,7 @@ public final class PicaConfiguration {
         this.headers = Collections.unmodifiableMap(new HashMap<>(builder.headers));
         this.timeout = builder.timeout;
         this.retryTimes = builder.retryTimes;
+        this.proxyFallbackThreshold = builder.proxyFallbackThreshold;
         this.executor = builder.executor;
         this.downloadThreadPoolSize = builder.downloadThreadPoolSize;
         this.cachePool = new CachePool<>(builder.cacheSize);
@@ -76,6 +79,10 @@ public final class PicaConfiguration {
 
     public int getRetryTimes() {
         return retryTimes;
+    }
+
+    public int getProxyFallbackThreshold() {
+        return proxyFallbackThreshold;
     }
 
     public ExecutorService getExecutor() {
@@ -111,6 +118,7 @@ public final class PicaConfiguration {
         private final Map<String, String> headers = new HashMap<>();
         private Duration timeout = Duration.ofSeconds(30);
         private int retryTimes = 5;
+        private int proxyFallbackThreshold = 2;
         private ExecutorService executor = null;
         private int downloadThreadPoolSize = 12; // -1 表示使用默认值 (CPU核心数)
         private int cacheSize = 100 * 1024 * 1024;
@@ -147,6 +155,12 @@ public final class PicaConfiguration {
         public Builder retryTimes(int retryTimes) {
             if (retryTimes < 0) throw new IllegalArgumentException("Retry times must be non-negative.");
             this.retryTimes = retryTimes;
+            return this;
+        }
+
+        public Builder proxyFallbackThreshold(int proxyFallbackThreshold) {
+            if (proxyFallbackThreshold < 0) throw new IllegalArgumentException("Proxy fallback threshold must be non-negative.");
+            this.proxyFallbackThreshold = proxyFallbackThreshold;
             return this;
         }
 
