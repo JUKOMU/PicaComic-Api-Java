@@ -159,7 +159,8 @@ public final class PicaConfiguration {
         }
 
         public Builder proxyFallbackThreshold(int proxyFallbackThreshold) {
-            if (proxyFallbackThreshold < 0) throw new IllegalArgumentException("Proxy fallback threshold must be non-negative.");
+            if (proxyFallbackThreshold < 0)
+                throw new IllegalArgumentException("Proxy fallback threshold must be non-negative.");
             this.proxyFallbackThreshold = proxyFallbackThreshold;
             return this;
         }

@@ -15,7 +15,7 @@ import java.util.concurrent.ExecutorService;
  * @Project: PicaComic-Api-Java
  * @Date: 2026/02/19
  */
-public interface IPicaClient {
+public interface IPicaClient extends AutoCloseable {
 
     // == 核心数据获取层 ==
 

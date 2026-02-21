@@ -19,6 +19,6 @@ public class DefaultPhotoPathGenerator implements IPhotoPathGenerator {
             return Path.of("");
         }
         return Path.of(FileUtils.sanitizeFilename(String.valueOf(photo.getOrder())),
-                photo.getId());
+                photo.getTitle());
     }
 }

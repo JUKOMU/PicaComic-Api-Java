@@ -57,6 +57,7 @@ public final class PicaClient implements IPicaClient {
     private final ImageQuality imageQuality;
 
     public PicaClient(PicaConfiguration config, OkHttpClient httpClient, PicaDomainManager domainManager) {
+        this.loggedInUserName = null;
         this.token = null;
         this.config = Objects.requireNonNull(config);
         this.httpClient = Objects.requireNonNull(httpClient);
@@ -107,6 +108,10 @@ public final class PicaClient implements IPicaClient {
 
     @Override
     public PicaAlbum getAlbum(String albumId) {
+        PicaAlbum cachedPicaAlbum = getCachedPicaAlbum(albumId);
+        if (cachedPicaAlbum != null) {
+            return cachedPicaAlbum;
+        }
         HttpUrl url = newHttpUrlBuilder()
                 .addPathSegment("comics")
                 .addPathSegment(albumId)
@@ -115,7 +120,9 @@ public final class PicaClient implements IPicaClient {
         try {
             PicaResponse response = executeGetRequest(url);
             JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("comic").getAsJsonObject();
-            return parserAlbum(JsonUtils.toJsonString(jsonObject), photoList);
+            PicaAlbum album = parserAlbum(JsonUtils.toJsonString(jsonObject), photoList);
+            cachePicaAlbum(album);
+            return album;
         } catch (Exception e) {
             logger.error("Failed to get album with error message :{}", e.getMessage());
             throw e;
@@ -156,6 +163,10 @@ public final class PicaClient implements IPicaClient {
 
     @Override
     public PicaPhoto getPhoto(String albumId, int order) {
+        PicaPhoto cachedPicaPhoto = getCachedPicaPhoto(albumId, order);
+        if (cachedPicaPhoto != null) {
+            return cachedPicaPhoto;
+        }
         PicaAlbum album = getAlbum(albumId);
         HttpUrl url = newHttpUrlBuilder()
                 .addPathSegment("comics")
@@ -188,7 +199,9 @@ public final class PicaClient implements IPicaClient {
 
             String photoId = JsonUtils.toJsonObject(response.getData()).getAsJsonObject("ep").get("_id").getAsString();
             PicaPhoto albumPhoto = album.getPhoto(photoId);
-            return new PicaPhoto(albumId, photoId, albumPhoto.getTitle(), albumPhoto.getUpdatedAt(), albumPhoto.getOrder(), images, album.isSingleAlbum());
+            PicaPhoto photo = new PicaPhoto(albumId, photoId, albumPhoto.getTitle(), albumPhoto.getUpdatedAt(), albumPhoto.getOrder(), images, album.isSingleAlbum());
+            cachePicaPhoto(photo, albumId, order);
+            return photo;
         } catch (Exception e) {
             logger.error("Failed to get photo with error message :{}", e.getMessage());
             throw e;
@@ -247,6 +260,10 @@ public final class PicaClient implements IPicaClient {
 
     @Override
     public PicaContentPage getFavorites(SearchQuery query) {
+        PicaContentPage cachedPicaFavoritePage = getCachedPicaFavoritePage(query);
+        if (cachedPicaFavoritePage != null) {
+            return cachedPicaFavoritePage;
+        }
         HttpUrl url = newHttpUrlBuilder()
                 .addPathSegment("users")
                 .addPathSegment("favourite")
@@ -256,7 +273,9 @@ public final class PicaClient implements IPicaClient {
         try {
             PicaResponse response = executeGetRequest(url);
             JsonObject jsonObject = JsonUtils.toJsonObject(response.getData()).get("comics").getAsJsonObject();
-            return parserContentPage(JsonUtils.toJsonString(jsonObject));
+            PicaContentPage picaContentPage = parserContentPage(JsonUtils.toJsonString(jsonObject));
+            cachePicaFavoritePage(picaContentPage, query);
+            return picaContentPage;
         } catch (Exception e) {
             logger.error("Failed to get favorites with error message :{}", e.getMessage());
             throw e;
@@ -533,6 +552,77 @@ public final class PicaClient implements IPicaClient {
         return downloadResult;
     }
 
+    // == 缓存辅助方法 ==
+
+    /**
+     * 获取本子缓存
+     *
+     * @param albumId 本子id
+     * @return 本子详情
+     */
+    private PicaAlbum getCachedPicaAlbum(String albumId) {
+        return (PicaAlbum) cachePool.get(CacheKey.of(PicaAlbum.class, albumId));
+    }
+
+    /**
+     * 获取章节缓存
+     *
+     * @param albumId 本子id
+     * @param order   顺序
+     * @return 章节详情
+     */
+    private PicaPhoto getCachedPicaPhoto(String albumId, int order) {
+        return (PicaPhoto) cachePool.get(CacheKey.of(PicaPhoto.class, albumId + "/" + order));
+    }
+
+    /**
+     * 获取收藏夹缓存
+     *
+     * @return 收藏夹详情
+     */
+    private PicaContentPage getCachedPicaFavoritePage(SearchQuery query) {
+        if (loggedInUserName == null) {
+            return null;
+        }
+        String order = query.getOrderBy().getValue();
+        int page = query.getPage();
+        return (PicaContentPage) cachePool.get(CacheKey.of(PicaContentPage.class, loggedInUserName + "/" + order + "/" + page));
+    }
+
+    /**
+     * 缓存本子详情
+     *
+     * @param album 本子详情
+     */
+    private void cachePicaAlbum(PicaAlbum album) {
+        cachePool.put(CacheKey.of(PicaAlbum.class, album.id()), album);
+    }
+
+    /**
+     * 缓存章节详情
+     *
+     * @param photo   章节详情
+     * @param albumId 本子id
+     * @param order   顺序
+     */
+    private void cachePicaPhoto(PicaPhoto photo, String albumId, int order) {
+        cachePool.put(CacheKey.of(PicaPhoto.class, albumId + "/" + order), photo);
+    }
+
+    /**
+     * 缓存用户收藏夹详情
+     *
+     * @param favoritePage 收藏夹详情
+     * @param query        搜索参数
+     */
+    private void cachePicaFavoritePage(PicaContentPage favoritePage, SearchQuery query) {
+        if (loggedInUserName == null) {
+            return;
+        }
+        String order = query.getOrderBy().getValue();
+        int page = query.getPage();
+        cachePool.put(CacheKey.of(PicaContentPage.class, loggedInUserName + "/" + order + "/" + page), favoritePage);
+    }
 
     // == 辅助方法 ==
 
@@ -642,5 +732,25 @@ public final class PicaClient implements IPicaClient {
             headers.put("authorization", authToken);
         }
         return headers;
+    }
+
+    // == 资源管理实现 ==
+
+    @Override
+    public void close() {
+        // 只有当 ExecutorService 是由本客户端内部创建时，才负责关闭它
+        if (!isExternalExecutor && internalExecutor != null && !internalExecutor.isShutdown()) {
+            internalExecutor.shutdown();
+        }
+        // OkHttpClient 内部有自己的连接池和线程池，也需要关闭
+        httpClient.dispatcher().executorService().shutdown();
+        httpClient.connectionPool().evictAll();
+        try (var cache = httpClient.cache()) {
+            if (cache != null) {
+                cache.close();
+            }
+        } catch (IOException e) {
+            logger.error("I/O error in close()", e);
+        }
     }
 }

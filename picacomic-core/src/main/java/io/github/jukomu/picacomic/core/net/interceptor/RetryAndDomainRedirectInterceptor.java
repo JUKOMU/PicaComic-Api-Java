@@ -70,8 +70,7 @@ public final class RetryAndDomainRedirectInterceptor implements Interceptor {
                     domainManager.markDomainAsBlocked(originalHost);
                 }
                 requestToProceed = buildProxyRequest(originalRequest);
-            }
-            else {
+            } else {
                 // 原有逻辑
                 final boolean isPlaceholder = isPlaceholderRequest(originalRequest);
 
