@@ -186,7 +186,7 @@ public record PicaAlbum(
      * @return 点赞总数
      */
     public int getTotalLikes() {
-        return totalLikes;
+        return Math.max(totalLikes, likesCount);
     }
 
     /**
@@ -195,7 +195,7 @@ public record PicaAlbum(
      * @return 浏览总数
      */
     public int getTotalViews() {
-        return totalViews;
+        return Math.max(totalViews, viewsCount);
     }
 
     /**
@@ -204,7 +204,7 @@ public record PicaAlbum(
      * @return 评论总数
      */
     public int getTotalComments() {
-        return totalComments;
+        return Math.max(totalComments, commentsCount);
     }
 
     /**
@@ -213,7 +213,7 @@ public record PicaAlbum(
      * @return 浏览数
      */
     public int getViewsCount() {
-        return viewsCount;
+        return Math.max(totalViews, viewsCount);
     }
 
     /**
@@ -222,7 +222,7 @@ public record PicaAlbum(
      * @return 点赞数
      */
     public int getLikesCount() {
-        return likesCount;
+        return Math.max(totalLikes, likesCount);
     }
 
     /**
@@ -231,7 +231,7 @@ public record PicaAlbum(
      * @return 评论数
      */
     public int getCommentsCount() {
-        return commentsCount;
+        return Math.max(totalComments, commentsCount);
     }
 
     /**

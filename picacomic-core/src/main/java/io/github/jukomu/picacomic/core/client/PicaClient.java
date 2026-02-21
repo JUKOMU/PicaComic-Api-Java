@@ -1,9 +1,12 @@
 package io.github.jukomu.picacomic.core.client;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.jukomu.picacomic.api.client.DownloadResult;
 import io.github.jukomu.picacomic.api.client.IPicaClient;
 import io.github.jukomu.picacomic.api.enums.ImageQuality;
+import io.github.jukomu.picacomic.api.enums.TimeOption;
 import io.github.jukomu.picacomic.api.exception.NetworkException;
 import io.github.jukomu.picacomic.api.exception.ResponseException;
 import io.github.jukomu.picacomic.api.model.*;
@@ -260,6 +263,7 @@ public final class PicaClient implements IPicaClient {
 
     @Override
     public PicaContentPage getFavorites(SearchQuery query) {
+        Objects.requireNonNull(loggedInUserName, "Need login before getting favorites");
         PicaContentPage cachedPicaFavoritePage = getCachedPicaFavoritePage(query);
         if (cachedPicaFavoritePage != null) {
             return cachedPicaFavoritePage;
@@ -312,6 +316,71 @@ public final class PicaClient implements IPicaClient {
             return parserContentPage(JsonUtils.toJsonString(jsonObject));
         } catch (Exception e) {
             logger.error("Failed to get category with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public PicaContentPage getLeaderboard(TimeOption timeOption) {
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addPathSegment("leaderboard")
+                .addQueryParameter("tt", timeOption.getValue())
+                .addQueryParameter("ct", "VC")
+                .build();
+        try {
+            PicaResponse response = executeGetRequest(url);
+            JsonArray jsonObject = JsonUtils.toJsonObject(response.getData()).get("comics").getAsJsonArray();
+            List<PicaAlbum> albums = new ArrayList<>();
+            for (JsonElement jsonElement : jsonObject) {
+                PicaAlbum album = parserAlbum(JsonUtils.toJsonString(jsonElement), null);
+                albums.add(album);
+            }
+            return new PicaContentPage(1, 1, 40, 40, albums);
+        } catch (Exception e) {
+            logger.error("Failed to get leaderboard with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public List<PicaUserInfo> getKnightLeaderboard() {
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addPathSegment("knight-leaderboard")
+                .build();
+        try {
+            PicaResponse response = executeGetRequest(url);
+            JsonArray jsonObject = JsonUtils.toJsonObject(response.getData()).get("users").getAsJsonArray();
+            List<PicaUserInfo> userInfos = new ArrayList<>();
+            for (JsonElement jsonElement : jsonObject) {
+                PicaUserInfo userInfo = parserUserInfo(JsonUtils.toJsonString(jsonElement));
+                userInfos.add(userInfo);
+            }
+            return userInfos;
+        } catch (Exception e) {
+            logger.error("Failed to get knight-leaderboard with error message :{}", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public PicaContentPage getRandomAlbums() {
+        HttpUrl url = newHttpUrlBuilder()
+                .addPathSegment("comics")
+                .addPathSegment("random")
+                .build();
+        try {
+            PicaResponse response = executeGetRequest(url);
+            JsonArray jsonObject = JsonUtils.toJsonObject(response.getData()).get("comics").getAsJsonArray();
+            List<PicaAlbum> albums = new ArrayList<>();
+            for (JsonElement jsonElement : jsonObject) {
+                PicaAlbum album = parserAlbum(JsonUtils.toJsonString(jsonElement), null);
+                albums.add(album);
+            }
+            return new PicaContentPage(1, 1, 20, 20, albums);
+        } catch (Exception e) {
+            logger.error("Failed to get random albums with error message :{}", e.getMessage());
             throw e;
         }
     }

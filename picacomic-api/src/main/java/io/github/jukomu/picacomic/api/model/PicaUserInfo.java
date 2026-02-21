@@ -22,13 +22,14 @@ public record PicaUserInfo(
         List<String> characters,
         String createdAt,
         PicaImage avatar,
-        boolean isPunched
+        boolean isPunched,
+        int comicsUploaded
 ) {
     /**
      * 创建一个仅包含用户名的部分填充的 PicaUserInfo 对象。
      */
     public static PicaUserInfo partial(String name) {
-        return new PicaUserInfo(null, name, null, null, null, null, null, false, 0, 1, null, null, null, false);
+        return new PicaUserInfo(null, name, null, null, null, null, null, false, 0, 1, null, null, null, false, 0);
     }
 
     /**
@@ -155,5 +156,14 @@ public record PicaUserInfo(
      */
     public boolean isPunched() {
         return isPunched;
+    }
+
+    /**
+     * 获取上传的本子数
+     *
+     * @return 上传的本子数
+     */
+    public int getComicsUploaded() {
+        return comicsUploaded;
     }
 }

@@ -1,5 +1,6 @@
 package io.github.jukomu.picacomic.api.client;
 
+import io.github.jukomu.picacomic.api.enums.TimeOption;
 import io.github.jukomu.picacomic.api.model.*;
 import io.github.jukomu.picacomic.api.strategy.IAlbumPathGenerator;
 import io.github.jukomu.picacomic.api.strategy.IImagePathGenerator;
@@ -7,6 +8,7 @@ import io.github.jukomu.picacomic.api.strategy.IPhotoPathGenerator;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 
 /**
@@ -67,6 +69,28 @@ public interface IPicaClient extends AutoCloseable {
      * @return 分类列表页的一页结果
      */
     PicaContentPage getCategories(SearchQuery query);
+
+    /**
+     * 获取排行榜
+     *
+     * @param timeOption 时间范围
+     * @return 排行榜
+     */
+    PicaContentPage getLeaderboard(TimeOption timeOption);
+
+    /**
+     * 获取骑士榜
+     *
+     * @return 骑士榜
+     */
+    List<PicaUserInfo> getKnightLeaderboard();
+
+    /**
+     * 获取一组随机本子
+     *
+     * @return 一组随机本子
+     */
+    PicaContentPage getRandomAlbums();
 
     /**
      * 获取用户信息

@@ -406,6 +406,11 @@ public class PicaParser {
                 isPunched = jsonObject.get("isPunched").getAsBoolean();
             }
 
+            int comicsUploaded = 0;
+            if (jsonObject.has("comicsUploaded") && !jsonObject.get("comicsUploaded").isJsonNull()) {
+                comicsUploaded = jsonObject.get("comicsUploaded").getAsInt();
+            }
+
             PicaImage picaImage = null;
             if (jsonObject.has("avatar") && !jsonObject.get("avatar").isJsonNull()) {
                 JsonObject avatar = jsonObject.get("avatar").getAsJsonObject();
@@ -438,7 +443,8 @@ public class PicaParser {
                     characters,
                     createdAt,
                     picaImage,
-                    isPunched);
+                    isPunched,
+                    comicsUploaded);
 
         } catch (Exception e) {
             throw new ParseResponseException("Failed to parse user API JSON", e);
