@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="./README_en.md">English</a>
+  <span>&nbsp;</span>
+  <strong>中文</strong>
+</p>
+
 # Java API For PicaComic (哔咔漫画)
 
 ![Java](https://img.shields.io/badge/Java-17+-blue.svg)
