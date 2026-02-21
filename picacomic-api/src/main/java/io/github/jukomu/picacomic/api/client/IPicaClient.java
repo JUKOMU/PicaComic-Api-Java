@@ -1,6 +1,13 @@
 package io.github.jukomu.picacomic.api.client;
 
 import io.github.jukomu.picacomic.api.model.*;
+import io.github.jukomu.picacomic.api.strategy.IAlbumPathGenerator;
+import io.github.jukomu.picacomic.api.strategy.IImagePathGenerator;
+import io.github.jukomu.picacomic.api.strategy.IPhotoPathGenerator;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
 
 /**
  * @author JUKOMU
@@ -78,4 +85,129 @@ public interface IPicaClient {
      * @return 用户信息对象
      */
     PicaUserInfo login(String userNameOrEmail, String password);
+
+    // == 便利操作层 ==
+
+    /**
+     * 下载图片到默认路径
+     *
+     * @param image 图片信息
+     */
+    void downloadImage(PicaImage image) throws IOException;
+
+    /**
+     * 下载图片
+     *
+     * @param imageUrl 图片URL
+     */
+    void downloadImage(String imageUrl, Path path) throws IOException;
+
+    /**
+     * 下载图片到指定路径
+     *
+     * @param image              图片信息
+     * @param imagePathGenerator 路径
+     */
+    void downloadImage(PicaImage image, IImagePathGenerator imagePathGenerator) throws IOException;
+
+    /**
+     * 下载图片到指定路径
+     *
+     * @param image 图片信息
+     * @param path  路径
+     */
+    void downloadImage(PicaImage image, Path path) throws IOException;
+
+    /**
+     * 下载章节到默认路径
+     *
+     * @param photo 章节详情对象
+     * @return 下载结果报告
+     */
+    DownloadResult downloadPhoto(PicaPhoto photo);
+
+    /**
+     * 下载章节到指定路径
+     *
+     * @param photo         章节详情对象
+     * @param pathGenerator 路径
+     * @return 下载结果报告
+     */
+    DownloadResult downloadPhoto(PicaPhoto photo, IPhotoPathGenerator pathGenerator);
+
+    /**
+     * 下载章节到指定路径
+     *
+     * @param photo 章节详情对象
+     * @param path  路径
+     * @return 下载结果报告
+     */
+    DownloadResult downloadPhoto(PicaPhoto photo, Path path);
+
+    /**
+     * 下载章节到指定路径
+     *
+     * @param photo         章节详情对象
+     * @param pathGenerator 路径
+     * @param executor      线程池
+     * @return 下载结果报告
+     */
+    DownloadResult downloadPhoto(PicaPhoto photo, IPhotoPathGenerator pathGenerator, ExecutorService executor);
+
+    /**
+     * 下载章节到指定路径
+     *
+     * @param photo    章节详情对象
+     * @param path     路径
+     * @param executor 线程池
+     * @return 下载结果报告
+     */
+    DownloadResult downloadPhoto(PicaPhoto photo, Path path, ExecutorService executor);
+
+    /**
+     * 下载本子到指定路径
+     *
+     * @param album 本子详情对象
+     * @return 下载结果报告
+     */
+    DownloadResult downloadAlbum(PicaAlbum album);
+
+    /**
+     * 下载本子到指定路径
+     *
+     * @param album         本子详情对象
+     * @param pathGenerator 路径
+     * @return 下载结果报告
+     */
+    DownloadResult downloadAlbum(PicaAlbum album, IAlbumPathGenerator pathGenerator);
+
+    /**
+     * 下载本子到指定路径
+     *
+     * @param album 本子详情对象
+     * @param path  路径
+     * @return 下载结果报告
+     */
+    DownloadResult downloadAlbum(PicaAlbum album, Path path);
+
+    /**
+     * 下载本子到指定路径
+     *
+     * @param album         本子详情对象
+     * @param pathGenerator 路径
+     * @param executor      线程池
+     * @return 下载结果报告
+     */
+    DownloadResult downloadAlbum(PicaAlbum album, IAlbumPathGenerator pathGenerator, ExecutorService executor);
+
+    /**
+     * 下载本子到指定路径
+     *
+     * @param album    本子详情对象
+     * @param path     路径
+     * @param executor 线程池
+     * @return 下载结果报告
+     */
+    DownloadResult downloadAlbum(PicaAlbum album, Path path, ExecutorService executor);
+
 }

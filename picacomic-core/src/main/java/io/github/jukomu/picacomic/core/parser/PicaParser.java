@@ -68,7 +68,7 @@ public class PicaParser {
                 if (thumbObj.has("fileServer") && !thumbObj.get("fileServer").isJsonNull()) {
                     fileServer = StringUtils.defaultIfBlank(thumbObj.get("fileServer").getAsString(), "");
                 }
-                thumb = new PicaImage(originalName, path, fileServer);
+                thumb = new PicaImage(originalName, path, fileServer, null);
             }
 
             String author = "";
@@ -205,6 +205,9 @@ public class PicaParser {
         try {
             JsonObject jsonObject = JsonUtils.toJsonObject(json);
 
+            int total = jsonObject.get("total").getAsInt();
+            boolean isSingleAlbum = total == 1;
+
             List<PicaPhoto> photos = new ArrayList<>();
             JsonArray docs = jsonObject.getAsJsonArray("docs");
             for (JsonElement doc1 : docs) {
@@ -231,7 +234,7 @@ public class PicaParser {
                 if (doc.has("updated_at") && !doc.get("updated_at").isJsonNull()) {
                     updatedAt = StringUtils.defaultIfBlank(doc.get("updated_at").getAsString(), "");
                 }
-                PicaPhoto photo = new PicaPhoto(albumId, id, title, updatedAt, order, null);
+                PicaPhoto photo = new PicaPhoto(albumId, id, title, updatedAt, order, null, isSingleAlbum);
                 photos.add(photo);
             }
 
@@ -268,7 +271,7 @@ public class PicaParser {
                 if (doc.has("fileServer") && !doc.get("fileServer").isJsonNull()) {
                     fileServer = StringUtils.defaultIfBlank(doc.get("fileServer").getAsString(), "");
                 }
-                PicaImage picaImage = new PicaImage(originalName, path, fileServer);
+                PicaImage picaImage = new PicaImage(originalName, path, fileServer, null);
                 images.add(picaImage);
             }
 
@@ -418,7 +421,7 @@ public class PicaParser {
                 if (avatar.has("fileServer") && !avatar.get("fileServer").isJsonNull()) {
                     fileServer = StringUtils.defaultIfBlank(avatar.get("fileServer").getAsString(), "");
                 }
-                picaImage = new PicaImage(originalName, path, fileServer);
+                picaImage = new PicaImage(originalName, path, fileServer, null);
             }
 
             return new PicaUserInfo(

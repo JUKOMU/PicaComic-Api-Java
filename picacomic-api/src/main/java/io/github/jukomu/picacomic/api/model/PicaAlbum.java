@@ -287,4 +287,13 @@ public record PicaAlbum(
         photos.sort(Comparator.comparingInt(PicaPhoto::getOrder));
         return photos.get(index - 1);
     }
+
+    /**
+     * 是否单行本
+     *
+     * @return 是否单行本
+     */
+    public boolean isSingleAlbum() {
+        return photos.size() == 1;
+    }
 }

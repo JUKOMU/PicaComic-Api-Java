@@ -1,11 +1,15 @@
 package io.github.jukomu.picacomic.core.client;
 
 import com.google.gson.JsonObject;
+import io.github.jukomu.picacomic.api.client.DownloadResult;
 import io.github.jukomu.picacomic.api.client.IPicaClient;
 import io.github.jukomu.picacomic.api.enums.ImageQuality;
 import io.github.jukomu.picacomic.api.exception.NetworkException;
 import io.github.jukomu.picacomic.api.exception.ResponseException;
 import io.github.jukomu.picacomic.api.model.*;
+import io.github.jukomu.picacomic.api.strategy.IAlbumPathGenerator;
+import io.github.jukomu.picacomic.api.strategy.IImagePathGenerator;
+import io.github.jukomu.picacomic.api.strategy.IPhotoPathGenerator;
 import io.github.jukomu.picacomic.core.cache.CacheKey;
 import io.github.jukomu.picacomic.core.cache.CachePool;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
@@ -13,6 +17,9 @@ import io.github.jukomu.picacomic.core.constant.PicaConstants;
 import io.github.jukomu.picacomic.core.crypto.PicaCryptoTool;
 import io.github.jukomu.picacomic.core.net.model.PicaResponse;
 import io.github.jukomu.picacomic.core.net.provider.PicaDomainManager;
+import io.github.jukomu.picacomic.core.strategy.impl.DefaultAlbumPathGenerator;
+import io.github.jukomu.picacomic.core.strategy.impl.DefaultImagePathGenerator;
+import io.github.jukomu.picacomic.core.strategy.impl.DefaultPhotoPathGenerator;
 import io.github.jukomu.picacomic.core.util.JsonUtils;
 import okhttp3.*;
 import org.apache.commons.lang3.StringUtils;
@@ -20,9 +27,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 import static io.github.jukomu.picacomic.core.constant.PicaConstants.*;
 import static io.github.jukomu.picacomic.core.parser.PicaParser.*;
@@ -180,7 +188,7 @@ public final class PicaClient implements IPicaClient {
 
             String photoId = JsonUtils.toJsonObject(response.getData()).getAsJsonObject("ep").get("_id").getAsString();
             PicaPhoto albumPhoto = album.getPhoto(photoId);
-            return new PicaPhoto(albumId, photoId, albumPhoto.getTitle(), albumPhoto.getUpdatedAt(), albumPhoto.getOrder(), images);
+            return new PicaPhoto(albumId, photoId, albumPhoto.getTitle(), albumPhoto.getUpdatedAt(), albumPhoto.getOrder(), images, album.isSingleAlbum());
         } catch (Exception e) {
             logger.error("Failed to get photo with error message :{}", e.getMessage());
             throw e;
@@ -189,7 +197,19 @@ public final class PicaClient implements IPicaClient {
 
     @Override
     public byte[] fetchImageBytes(PicaImage image) {
-        return new byte[0];
+        String imageUrl = image.getImageUrl();
+        Request request = new Request.Builder()
+                .url(imageUrl)
+                .get()
+                .build();
+
+        try {
+            PicaResponse response = executeRequest(request);
+            return response.getContent();
+        } catch (Exception e) {
+            logger.error("Failed to fetch image with error message :{}", e.getMessage());
+            throw e;
+        }
     }
 
     @Override
@@ -324,6 +344,197 @@ public final class PicaClient implements IPicaClient {
             throw e;
         }
     }
+
+    // == 便利操作层实现 ==
+
+    @Override
+    public void downloadImage(PicaImage image) throws IOException {
+        downloadImage(image, new DefaultImagePathGenerator().generatePath(image));
+    }
+
+    @Override
+    public void downloadImage(String imageUrl, Path path) throws IOException {
+        PicaImage picaImage = new PicaImage("", "", "", imageUrl);
+        downloadImage(picaImage, path);
+    }
+
+    @Override
+    public void downloadImage(PicaImage image, IImagePathGenerator imagePathGenerator) throws IOException {
+        downloadImage(image, imagePathGenerator.generatePath(image));
+    }
+
+    @Override
+    public void downloadImage(PicaImage image, Path path) throws IOException {
+        logger.info("开始下载图片: {}", image.getImageUrl());
+        if (Files.isDirectory(path)) {
+            // 路径为目录则拼接文件名
+            path = path.resolve(image.getOriginalName());
+        }
+        // 检查文件是否存在
+        if (Files.exists(path)) {
+            logger.info("图片 {} 已存在，跳过下载", image.getOriginalName());
+            return;
+        }
+        byte[] imageBytes = fetchImageBytes(image);
+        // 确保路径存在
+        if (path.getParent() != null) {
+            Files.createDirectories(path.getParent());
+        }
+        Files.write(path, imageBytes);
+        logger.info("图片 {} 下载完成", image.getImageUrl());
+    }
+
+    @Override
+    public DownloadResult downloadPhoto(PicaPhoto photo) {
+        return downloadPhoto(photo, new DefaultPhotoPathGenerator());
+    }
+
+    @Override
+    public DownloadResult downloadPhoto(PicaPhoto photo, IPhotoPathGenerator pathGenerator) {
+        PicaAlbum album = getAlbum(photo.getAlbumId());
+        // 拼接完整路径
+        Path pathAlbum = new DefaultAlbumPathGenerator().generatePath(album);
+        Path pathPhoto = pathGenerator.generatePath(photo);
+        return downloadPhoto(photo, pathAlbum.resolve(pathPhoto));
+    }
+
+    @Override
+    public DownloadResult downloadPhoto(PicaPhoto photo, Path path) {
+        return downloadPhoto(photo, path, this.internalExecutor);
+    }
+
+    @Override
+    public DownloadResult downloadPhoto(PicaPhoto photo, IPhotoPathGenerator pathGenerator, ExecutorService executor) {
+        PicaAlbum album = getAlbum(photo.getAlbumId());
+        // 拼接完整路径
+        Path pathAlbum = new DefaultAlbumPathGenerator().generatePath(album);
+        Path pathPhoto = pathGenerator.generatePath(photo);
+        return downloadPhoto(photo, pathAlbum.resolve(pathPhoto), executor);
+    }
+
+    @Override
+    public DownloadResult downloadPhoto(PicaPhoto photo, Path path, ExecutorService executor) {
+        logger.info("开始下载章节: {}", photo.getTitle());
+        Semaphore semaphore = new Semaphore(concurrentImageDownloads);
+        List<CompletableFuture<Path>> futures = new ArrayList<>();
+        List<Path> successfulFiles = Collections.synchronizedList(new ArrayList<>());
+        ConcurrentHashMap<PicaImage, Exception> failedTasks = new ConcurrentHashMap<>();
+
+        for (PicaImage image : photo.images()) {
+            try {
+                semaphore.acquire();
+                CompletableFuture<Path> future = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        Objects.requireNonNull(path, "Photo path generator returned null for photo " + photo.id());
+
+                        Path destination = path.resolve(image.getOriginalName());
+
+                        downloadImage(image, destination);
+                        return destination;
+                    } catch (Exception e) {
+                        failedTasks.put(image, e);
+                        throw new CompletionException(e);
+                    }
+                }, executor);
+                future.whenComplete((result, throwable) -> semaphore.release());
+                futures.add(future);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                failedTasks.put(image, e);
+                break;
+            }
+        }
+
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        } catch (CompletionException e) {
+            logger.warn("下载章节 '{}' 时部分图片下载失败。", photo.getTitle());
+        }
+
+        for (CompletableFuture<Path> future : futures) {
+            if (!future.isCompletedExceptionally()) {
+                successfulFiles.add(future.join());
+            }
+        }
+
+        DownloadResult downloadResult = new DownloadResult(successfulFiles, failedTasks);
+        logger.info("章节 {} 下载完成. 成功: {}, 失败: {}", photo.getTitle(), downloadResult.getSuccessfulFiles().size(), downloadResult.getFailedTasks().size());
+        return downloadResult;
+    }
+
+    @Override
+    public DownloadResult downloadAlbum(PicaAlbum album) {
+        return downloadAlbum(album, new DefaultAlbumPathGenerator());
+    }
+
+    @Override
+    public DownloadResult downloadAlbum(PicaAlbum album, IAlbumPathGenerator pathGenerator) {
+        return downloadAlbum(album, pathGenerator, this.internalExecutor);
+    }
+
+    @Override
+    public DownloadResult downloadAlbum(PicaAlbum album, Path path) {
+        return downloadAlbum(album, path, this.internalExecutor);
+    }
+
+    @Override
+    public DownloadResult downloadAlbum(PicaAlbum album, IAlbumPathGenerator pathGenerator, ExecutorService executor) {
+        return downloadAlbum(album, pathGenerator.generatePath(album), executor);
+    }
+
+    @Override
+    public DownloadResult downloadAlbum(PicaAlbum album, Path path, ExecutorService executor) {
+        logger.info("开始下载本子: {}", album.getTitle());
+        Semaphore semaphore = new Semaphore(concurrentPhotoDownloads);
+        // 有具体路径时直接下载章节直接无需拼接album路径
+        List<CompletableFuture<DownloadResult>> photoFutures = new ArrayList<>();
+        Objects.requireNonNull(path, "Album path generator returned null for album: " + album.id());
+
+        for (PicaPhoto photo : album.getPhotos()) {
+            try {
+                semaphore.acquire();
+                CompletableFuture<DownloadResult> future = CompletableFuture.supplyAsync(() -> {
+                    PicaPhoto fullPhoto = getPhoto(photo.getAlbumId(), photo.getOrder());
+                    return downloadPhoto(fullPhoto, path.resolve(new DefaultPhotoPathGenerator().generatePath(fullPhoto)), executor);
+                }, executor);
+                future.whenComplete((result, throwable) -> {
+                    if (throwable != null) {
+                        logger.error("下载章节 '{}' (ID: {}) 失败: {}", photo.getTitle(), photo.id(), throwable.getCause() != null ? throwable.getCause().getMessage() : throwable.getMessage());
+                    }
+                    semaphore.release();
+                });
+                photoFutures.add(future);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("下载本子 '{}' 的过程被中断", album.getTitle());
+                break;
+            }
+
+        }
+
+        try {
+            CompletableFuture.allOf(photoFutures.toArray(new CompletableFuture[0])).join();
+        } catch (CompletionException e) {
+            logger.warn("下载本子 '{}' 时部分章节下载失败。", album.getTitle());
+        }
+        List<Path> allSuccessfulFiles = Collections.synchronizedList(new ArrayList<>());
+        ConcurrentHashMap<PicaImage, Exception> allFailedTasks = new ConcurrentHashMap<>();
+
+        for (CompletableFuture<DownloadResult> future : photoFutures) {
+            if (!future.isCompletedExceptionally()) {
+                DownloadResult result = future.join();
+                allSuccessfulFiles.addAll(result.getSuccessfulFiles());
+                allFailedTasks.putAll(result.getFailedTasks());
+            }
+        }
+
+        DownloadResult downloadResult = new DownloadResult(allSuccessfulFiles, allFailedTasks);
+        logger.info("本子 {} 下载完成. 成功图片数: {}, 失败图片数: {}", album.getTitle(), downloadResult.getSuccessfulFiles().size(), downloadResult.getFailedTasks().size());
+        return downloadResult;
+    }
+
+
+    // == 辅助方法 ==
 
     private PicaResponse executeGetRequest(HttpUrl url) {
         Map<String, String> headers = buildHeaders(url, "GET", token, imageQuality.getValue());

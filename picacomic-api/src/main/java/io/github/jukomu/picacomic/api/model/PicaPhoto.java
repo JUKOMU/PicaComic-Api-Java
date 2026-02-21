@@ -14,7 +14,8 @@ public record PicaPhoto(
         String title,
         String updatedAt,
         int order,
-        List<PicaImage> images
+        List<PicaImage> images,
+        boolean isSingleAlbum
 ) {
     /**
      * 获取所属本子(Album)的ID
@@ -68,5 +69,14 @@ public record PicaPhoto(
      */
     public List<PicaImage> getImages() {
         return images;
+    }
+
+    /**
+     * 是否单行本
+     *
+     * @return 是否单行本
+     */
+    public boolean isSingleAlbum() {
+        return isSingleAlbum;
     }
 }

@@ -9,7 +9,8 @@ package io.github.jukomu.picacomic.api.model;
 public record PicaImage(
         String originalName,
         String path,
-        String fileServer
+        String fileServer,
+        String imageUrl
 ) {
 
     public String getOriginalName() {
@@ -28,6 +29,9 @@ public record PicaImage(
      * 构建完整的图片 URL
      */
     public String getImageUrl() {
+        if (imageUrl != null && !imageUrl.isEmpty()) {
+            return imageUrl;
+        }
         if (fileServer == null || path == null) {
             return "https://manhuabika.com/assets/placeholder_avatar_2-BAyIUBTE.png";
         }
