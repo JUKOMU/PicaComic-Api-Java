@@ -26,7 +26,7 @@
 |:---------------------------|:---------------------------------|
 | **Built-in Image Proxy (using wsrv.nl)** | ✅ |
 
-Below is a list of implemented features based on the current `PicaComic-Api-Java` repository:
+
 
 ### ✨ Implemented Features
 
