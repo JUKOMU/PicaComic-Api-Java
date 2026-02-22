@@ -22,6 +22,10 @@
 
 ## Features Overview
 
+| Additional Features | Implementation Status |
+|:---------------------------|:---------------------------------|
+| **Built-in Image Proxy (using wsrv.nl)** | ✅ |
+
 Below is a list of implemented features based on the current `PicaComic-Api-Java` repository:
 
 ### ✨ Implemented Features
@@ -79,7 +83,10 @@ This module contains the specific implementation logic for all features, handlin
     * **Session Management**: Manages user login states and Token credential maintenance.
 * **Network Processing**:
     * **Distribution and Domains (`PicaDomainManager`)**: Contains the mechanism for dynamically fetching and managing API domains.
-    * **Request Retries**: Implements a reliable retry logic and proxy fallback mechanism.
+    * **Request Retry and Proxy Fallback:**
+      * Implements a reliable retry logic and provides a **built-in public proxy fallback mechanism** when requests fail multiple times.
+      * For blocked image domains (e.g., those restricted by the Great Firewall in certain regions), when the number of retries reaches a specified threshold (default `proxyFallbackThreshold` is 2), the system will automatically redirect subsequent requests to a public image proxy service (currently using `wsrv.nl`).
+      * Users can also override the built-in mechanism through configuration options to use their own proxy service.
 * **Concurrent Downloading**:
     * Provides advanced methods like `downloadAlbum` and `downloadPhoto` with built-in concurrent download scheduling capabilities based on `ExecutorService`.
     * Batch download operations return a `DownloadResult` object, which contains detailed reports of successful and failed tasks.
