@@ -1,4 +1,4 @@
-package io.github.jukomu.picacomic.core.net.image;
+package io.github.jukomu.picacomic.core;
 
 import io.github.jukomu.picacomic.api.exception.ImageFetchException;
 import io.github.jukomu.picacomic.core.constant.PicaConstants;
@@ -11,12 +11,12 @@ import java.util.Set;
 /**
  * 图片 URL 的固定、精确 host 与路径策略。
  */
-public final class ImageHostPolicy {
+final class ImageHostPolicy {
 
     private static final String STATIC_PREFIX = "/static/";
     private final Set<String> allowedHosts;
 
-    public ImageHostPolicy() {
+    ImageHostPolicy() {
         this(PicaConstants.IMAGE_HOST_ALLOWLIST);
     }
 
@@ -24,18 +24,18 @@ public final class ImageHostPolicy {
         this.allowedHosts = Set.copyOf(allowedHosts);
     }
 
-    public Set<String> getAllowedHosts() {
+    Set<String> getAllowedHosts() {
         return allowedHosts;
     }
 
-    public boolean isAllowedHost(String host) {
+    boolean isAllowedHost(String host) {
         return host != null && allowedHosts.contains(host.toLowerCase(Locale.ROOT));
     }
 
     /**
      * 校验一个直接来源 URL。
      */
-    public HttpUrl validateDirect(String source) {
+    HttpUrl validateDirect(String source) {
         if (source == null || source.isBlank() || containsWhitespaceOrControl(source)) {
             throw new ImageFetchException(ImageFetchException.Reason.INVALID_SOURCE);
         }
@@ -61,7 +61,7 @@ public final class ImageHostPolicy {
     /**
      * 校验一次手动重定向的目标。任何策略失败都归入 redirect reason，且不会发出下一跳。
      */
-    public HttpUrl validateRedirect(HttpUrl url, String rawLocation) {
+    HttpUrl validateRedirect(HttpUrl url, String rawLocation) {
         if (url == null || rawLocation == null || rawLocation.isBlank()
                 || containsWhitespaceOrControl(rawLocation)
                 || containsUnsafePathSyntax(rawLocation)

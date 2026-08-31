@@ -1,4 +1,4 @@
-package io.github.jukomu.picacomic.core.net.image;
+package io.github.jukomu.picacomic.core;
 
 import io.github.jukomu.picacomic.api.exception.ImageFetchException;
 
@@ -9,20 +9,20 @@ import java.util.function.Supplier;
 /**
  * 一个 client 共享的在途图片 payload 预算。
  */
-public final class ImageMemoryBudget {
+final class ImageMemoryBudget {
 
-    public static final long MAX_PAYLOAD_BYTES = 64L * 1024L * 1024L;
+    static final long MAX_PAYLOAD_BYTES = 64L * 1024L * 1024L;
 
     private final Object monitor = new Object();
     private long reservedBytes;
 
-    public ImageMemoryBudget() {
+    ImageMemoryBudget() {
     }
 
     /**
      * 在 deadline 前保留 payload 空间。等待期间会周期性检查取消与 client close。
      */
-    public Reservation acquire(long bytes,
+    Reservation acquire(long bytes,
                                long deadlineNanos,
                                BooleanSupplier cancelled,
                                Supplier<ImageFetchException.Reason> cancellationReason) {
@@ -56,7 +56,7 @@ public final class ImageMemoryBudget {
         }
     }
 
-    public long getReservedBytes() {
+    long getReservedBytes() {
         synchronized (monitor) {
             return reservedBytes;
         }
@@ -65,7 +65,7 @@ public final class ImageMemoryBudget {
     /**
      * 唤醒所有等待者，使 close/cancel 能尽快重新检查状态。
      */
-    public void signalWaiters() {
+    void signalWaiters() {
         synchronized (monitor) {
             monitor.notifyAll();
         }
@@ -78,7 +78,7 @@ public final class ImageMemoryBudget {
         return new ImageFetchException(actual);
     }
 
-    public static final class Reservation implements AutoCloseable {
+    static final class Reservation implements AutoCloseable {
         private final ImageMemoryBudget owner;
         private final long bytes;
         private final AtomicBoolean released = new AtomicBoolean();
@@ -88,7 +88,7 @@ public final class ImageMemoryBudget {
             this.bytes = bytes;
         }
 
-        public long getBytes() {
+        long getBytes() {
             return bytes;
         }
 

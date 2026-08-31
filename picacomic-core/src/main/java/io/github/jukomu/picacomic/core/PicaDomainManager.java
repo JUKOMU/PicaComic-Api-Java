@@ -1,4 +1,4 @@
-package io.github.jukomu.picacomic.core.net.provider;
+package io.github.jukomu.picacomic.core;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,12 +15,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>该类只负责在已授权集合内排序；它没有远程发现、可变 host 集合或代理状态。</p>
  */
-public final class PicaDomainManager {
+final class PicaDomainManager {
 
     private final List<String> domains;
     private final Map<String, AtomicInteger> failureCounts = new ConcurrentHashMap<>();
 
-    public PicaDomainManager(List<String> domains) {
+    PicaDomainManager(List<String> domains) {
         Objects.requireNonNull(domains, "Domains cannot be null");
         if (domains.isEmpty()) {
             throw new IllegalArgumentException("At least one API domain is required");
@@ -42,38 +42,43 @@ public final class PicaDomainManager {
     /**
      * 获取当前失败分数最低的 host。相同分数保持配置顺序。
      */
-    public String getBestDomain() {
+    String getBestDomain() {
         return snapshotInPriorityOrder().get(0);
     }
 
     /**
      * 为一次逻辑请求生成稳定的 host 优先级快照。
      */
-    public List<String> snapshotInPriorityOrder() {
+    List<String> snapshotInPriorityOrder() {
         List<String> ordered = new ArrayList<>(domains);
-        ordered.sort(Comparator.comparingInt(domain -> failureCounts.get(domain).get()));
+        Map<String, Integer> scores = new LinkedHashMap<>();
+        for (String domain : domains) {
+            scores.put(domain, failureCounts.get(domain).get());
+        }
+        Map<String, Integer> immutableScores = Map.copyOf(scores);
+        ordered.sort(Comparator.comparingInt(immutableScores::get));
         return Collections.unmodifiableList(ordered);
     }
 
-    public boolean contains(String domain) {
+    boolean contains(String domain) {
         return domains.contains(domain);
     }
 
-    public void reportSuccess(String domain) {
+    void reportSuccess(String domain) {
         AtomicInteger count = failureCounts.get(domain);
         if (count != null) {
             count.set(0);
         }
     }
 
-    public void reportFailure(String domain) {
+    void reportFailure(String domain) {
         AtomicInteger count = failureCounts.get(domain);
         if (count != null) {
             count.updateAndGet(value -> value == Integer.MAX_VALUE ? value : value + 1);
         }
     }
 
-    public Map<String, Integer> getDomainStates() {
+    Map<String, Integer> getDomainStates() {
         Map<String, Integer> states = new LinkedHashMap<>();
         for (String domain : domains) {
             states.put(domain, failureCounts.get(domain).get());

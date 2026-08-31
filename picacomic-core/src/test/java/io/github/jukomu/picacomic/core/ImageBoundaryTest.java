@@ -4,7 +4,6 @@ import io.github.jukomu.picacomic.api.client.IPicaClient;
 import io.github.jukomu.picacomic.api.exception.ImageFetchException;
 import io.github.jukomu.picacomic.api.model.PicaImage;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
-import io.github.jukomu.picacomic.core.net.LocalTlsClientContextFactory;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.Test;

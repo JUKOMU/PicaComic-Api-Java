@@ -25,13 +25,7 @@ import io.github.jukomu.picacomic.core.cache.CachePool;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 import io.github.jukomu.picacomic.core.constant.PicaConstants;
 import io.github.jukomu.picacomic.core.crypto.PicaCryptoTool;
-import io.github.jukomu.picacomic.core.net.OkHttpBuilder;
-import io.github.jukomu.picacomic.core.net.image.ImageHostPolicy;
-import io.github.jukomu.picacomic.core.net.image.ImageLocatorResolver;
-import io.github.jukomu.picacomic.core.net.image.ImageMemoryBudget;
-import io.github.jukomu.picacomic.core.net.image.OkHttpPicaImageRequest;
 import io.github.jukomu.picacomic.core.net.model.PicaResponse;
-import io.github.jukomu.picacomic.core.net.provider.PicaDomainManager;
 import io.github.jukomu.picacomic.core.strategy.impl.DefaultAlbumPathGenerator;
 import io.github.jukomu.picacomic.core.strategy.impl.DefaultImagePathGenerator;
 import io.github.jukomu.picacomic.core.strategy.impl.DefaultPhotoPathGenerator;
@@ -90,6 +84,16 @@ final class DefaultPicaClient implements IPicaClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultPicaClient.class);
 
+    @FunctionalInterface
+    interface ImageFileWriter {
+        void write(Path path, byte[] bytes) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface ImageFileMover {
+        void move(Path temporary, Path target) throws IOException;
+    }
+
     private final PicaConfiguration config;
     private final OkHttpClient apiClient;
     private final OkHttpClient imageClient;
@@ -104,6 +108,8 @@ final class DefaultPicaClient implements IPicaClient {
     private final ImageLocatorResolver imageLocatorResolver;
     private final ImageMemoryBudget imageMemoryBudget;
     private final Semaphore readerSlots;
+    private final ImageFileWriter imageFileWriter;
+    private final ImageFileMover imageFileMover;
 
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Set<OkHttpPicaImageRequest> imageRequests = ConcurrentHashMap.newKeySet();
@@ -115,8 +121,17 @@ final class DefaultPicaClient implements IPicaClient {
     private volatile String token;
 
     DefaultPicaClient(PicaConfiguration config, OkHttpBuilder.HttpClientContext context) {
+        this(config, context, DefaultPicaClient::writeImageFile, FileUtils::moveAtomically);
+    }
+
+    DefaultPicaClient(PicaConfiguration config,
+                      OkHttpBuilder.HttpClientContext context,
+                      ImageFileWriter imageFileWriter,
+                      ImageFileMover imageFileMover) {
         this.config = Objects.requireNonNull(config, "Configuration cannot be null");
         Objects.requireNonNull(context, "HTTP client context cannot be null");
+        this.imageFileWriter = Objects.requireNonNull(imageFileWriter, "Image file writer cannot be null");
+        this.imageFileMover = Objects.requireNonNull(imageFileMover, "Image file mover cannot be null");
         this.apiClient = Objects.requireNonNull(context.getApiClient(), "API client cannot be null");
         this.imageClient = Objects.requireNonNull(context.getImageClient(), "Image client cannot be null");
         this.domainManager = Objects.requireNonNull(context.getDomainManager(), "Domain manager cannot be null");
@@ -451,8 +466,8 @@ final class DefaultPicaClient implements IPicaClient {
         try (PicaImageRequest request = newImageRequest(image)) {
             byte[] imageBytes = request.execute();
             temporary = FileUtils.createAtomicTemp(target);
-            Files.write(temporary, imageBytes, StandardOpenOption.WRITE);
-            FileUtils.moveAtomically(temporary, target);
+            imageFileWriter.write(temporary, imageBytes);
+            imageFileMover.move(temporary, target);
             temporary = null;
         } finally {
             FileUtils.deleteQuietly(temporary);
@@ -871,5 +886,9 @@ final class DefaultPicaClient implements IPicaClient {
                 LOGGER.debug("Failed to close HTTP cache: {}", exception.getClass().getSimpleName());
             }
         }
+    }
+
+    private static void writeImageFile(Path path, byte[] bytes) throws IOException {
+        Files.write(path, bytes, StandardOpenOption.WRITE);
     }
 }

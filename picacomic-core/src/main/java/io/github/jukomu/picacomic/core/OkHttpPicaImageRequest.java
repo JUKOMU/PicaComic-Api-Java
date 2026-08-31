@@ -1,4 +1,4 @@
-package io.github.jukomu.picacomic.core.net.image;
+package io.github.jukomu.picacomic.core;
 
 import io.github.jukomu.picacomic.api.client.PicaImageRequest;
 import io.github.jukomu.picacomic.api.exception.ImageFetchException;
@@ -31,7 +31,7 @@ import java.util.Objects;
 /**
  * 图片专用 OkHttp 请求句柄。它不继承 API client 的 request、Cookie 或拦截器。
  */
-public final class OkHttpPicaImageRequest implements PicaImageRequest {
+final class OkHttpPicaImageRequest implements PicaImageRequest {
 
     private static final int MAX_REDIRECTS = 3;
     private static final int SCRATCH_BYTES = 8 * 1024;
@@ -58,7 +58,7 @@ public final class OkHttpPicaImageRequest implements PicaImageRequest {
     private final Object lifecycleLock = new Object();
     private volatile ImageMemoryBudget.Reservation heldReservation;
 
-    public OkHttpPicaImageRequest(PicaImage image,
+    OkHttpPicaImageRequest(PicaImage image,
                                   OkHttpClient imageClient,
                                   ImageLocatorResolver resolver,
                                   ImageMemoryBudget budget,
@@ -545,7 +545,7 @@ public final class OkHttpPicaImageRequest implements PicaImageRequest {
     /**
      * 由所属 client 在 close 时调用；不属于 api module 的额外公共契约。
      */
-    public void closeFromClient() {
+    void closeFromClient() {
         boolean notify = false;
         synchronized (lifecycleLock) {
             State current = state.get();

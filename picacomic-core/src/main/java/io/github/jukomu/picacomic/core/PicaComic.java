@@ -2,7 +2,6 @@ package io.github.jukomu.picacomic.core;
 
 import io.github.jukomu.picacomic.api.client.IPicaClient;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
-import io.github.jukomu.picacomic.core.net.OkHttpBuilder;
 
 /**
  * PicaComic client 工厂。

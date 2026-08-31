@@ -1,7 +1,6 @@
-package io.github.jukomu.picacomic.core.net.interceptor;
+package io.github.jukomu.picacomic.core;
 
 import io.github.jukomu.picacomic.core.constant.PicaConstants;
-import io.github.jukomu.picacomic.core.net.provider.PicaDomainManager;
 import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
 import okhttp3.Request;
@@ -19,7 +18,7 @@ import java.util.List;
  * <p>它只在已经授权的 API host 之间轮换，只对幂等 GET/HEAD 以及 502/503/504
  * 或 I/O 错误重试。图片 client 不安装此拦截器。</p>
  */
-public final class RetryAndDomainRedirectInterceptor implements Interceptor {
+final class RetryAndDomainRedirectInterceptor implements Interceptor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RetryAndDomainRedirectInterceptor.class);
 
@@ -30,7 +29,7 @@ public final class RetryAndDomainRedirectInterceptor implements Interceptor {
      * @param maxRetries 首次尝试之后的额外尝试次数
      * @param domainManager 当前 client 的 API host 管理器
      */
-    public RetryAndDomainRedirectInterceptor(int maxRetries, PicaDomainManager domainManager) {
+    RetryAndDomainRedirectInterceptor(int maxRetries, PicaDomainManager domainManager) {
         if (maxRetries < 0) {
             throw new IllegalArgumentException("Max retries must be non-negative");
         }

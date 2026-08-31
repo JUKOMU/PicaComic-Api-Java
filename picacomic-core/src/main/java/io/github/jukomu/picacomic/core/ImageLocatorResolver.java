@@ -1,4 +1,4 @@
-package io.github.jukomu.picacomic.core.net.image;
+package io.github.jukomu.picacomic.core;
 
 import io.github.jukomu.picacomic.api.exception.ImageFetchException;
 import io.github.jukomu.picacomic.api.model.PicaImage;
@@ -9,23 +9,23 @@ import java.util.Locale;
 /**
  * 把图片模型中的 locator 归一化为经过同一策略校验的 HTTPS URL。
  */
-public final class ImageLocatorResolver {
+final class ImageLocatorResolver {
 
     private static final String STATIC_SEGMENT = "static";
     private final ImageHostPolicy policy;
 
-    public ImageLocatorResolver(ImageHostPolicy policy) {
+    ImageLocatorResolver(ImageHostPolicy policy) {
         this.policy = policy;
     }
 
-    public ImageHostPolicy getPolicy() {
+    ImageHostPolicy getPolicy() {
         return policy;
     }
 
     /**
      * 解析图片的直接 URL 或 fileServer/path 组合。
      */
-    public HttpUrl resolve(PicaImage image) {
+    HttpUrl resolve(PicaImage image) {
         if (image == null) {
             throw new ImageFetchException(ImageFetchException.Reason.INVALID_SOURCE);
         }
@@ -87,7 +87,7 @@ public final class ImageLocatorResolver {
     /**
      * 基于当前 URL 解析并校验 Location；策略失败都映射到 REDIRECT_REJECTED。
      */
-    public HttpUrl resolveRedirect(HttpUrl current, String location) {
+    HttpUrl resolveRedirect(HttpUrl current, String location) {
         if (current == null || location == null || location.isBlank()
                 || ImageHostPolicy.containsWhitespaceOrControl(location)
                 || ImageHostPolicy.containsUnsafePathSyntax(location)) {

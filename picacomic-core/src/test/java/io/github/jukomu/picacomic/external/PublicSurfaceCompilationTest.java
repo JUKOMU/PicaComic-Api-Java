@@ -1,0 +1,93 @@
+package io.github.jukomu.picacomic.external;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import javax.tools.DiagnosticCollector;
+import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.ToolProvider;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Compiles source from a package that is outside the core implementation package.
+ */
+class PublicSurfaceCompilationTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void externalConsumersCanUseOnlyTheFactoryAndApiContracts() throws IOException {
+        String allowed = """
+                package external.consumer;
+                import io.github.jukomu.picacomic.api.client.IPicaClient;
+                import io.github.jukomu.picacomic.api.client.PicaImageRequest;
+                import io.github.jukomu.picacomic.api.model.PicaImage;
+                import io.github.jukomu.picacomic.core.PicaComic;
+                import io.github.jukomu.picacomic.core.config.PicaConfiguration;
+                class AllowedConsumer {
+                    void createAndClose() {
+                        PicaConfiguration config = new PicaConfiguration.Builder().build();
+                        try (IPicaClient client = PicaComic.newApiClient(config)) {
+                            PicaImageRequest request = client.newImageRequest(
+                                    new PicaImage("image.png", "", "https://s2.picacomic.com", null));
+                            request.close();
+                        }
+                    }
+                }
+                """;
+        assertTrue(compile("AllowedConsumer", allowed), "approved public API must remain compilable");
+
+        String forbidden = """
+                package external.consumer;
+                import io.github.jukomu.picacomic.core.OkHttpBuilder;
+                import io.github.jukomu.picacomic.core.OkHttpPicaImageRequest;
+                import io.github.jukomu.picacomic.core.PicaDomainManager;
+                import java.net.CookieManager;
+                import okhttp3.OkHttpClient;
+                class ForbiddenConsumer {
+                    void bypass() {
+                        OkHttpBuilder.HttpClientContext context = OkHttpBuilder.build(null);
+                        OkHttpClient imageClient = context.getImageClient();
+                        PicaDomainManager domains = context.getDomainManager();
+                        CookieManager cookies = context.getCookieManager();
+                        OkHttpPicaImageRequest request = null;
+                    }
+                }
+                """;
+        assertFalse(compile("ForbiddenConsumer", forbidden),
+                "raw clients, domain state, cookies, and concrete requests must not compile externally");
+    }
+
+    private boolean compile(String className, String source) throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        assertNotNull(compiler, "tests require a JDK compiler");
+
+        Path sourceFile = tempDir.resolve(className + ".java");
+        Path outputDirectory = tempDir.resolve(className + "-classes");
+        Files.createDirectories(outputDirectory);
+        Files.writeString(sourceFile, source);
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(
+                diagnostics, null, null)) {
+            Iterable<? extends JavaFileObject> units = fileManager.getJavaFileObjects(sourceFile.toFile());
+            return Boolean.TRUE.equals(compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    List.of("-proc:none", "-classpath", System.getProperty("java.class.path"),
+                            "-d", outputDirectory.toString()),
+                    null,
+                    units).call());
+        }
+    }
+}

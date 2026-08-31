@@ -1,9 +1,7 @@
-package io.github.jukomu.picacomic.core.net;
+package io.github.jukomu.picacomic.core;
 
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 import io.github.jukomu.picacomic.core.constant.PicaConstants;
-import io.github.jukomu.picacomic.core.net.interceptor.RetryAndDomainRedirectInterceptor;
-import io.github.jukomu.picacomic.core.net.provider.PicaDomainManager;
 import okhttp3.ConnectionPool;
 import okhttp3.CookieJar;
 import okhttp3.Dns;
@@ -21,7 +19,7 @@ import java.util.List;
 /**
  * 只负责组装 client-owned 网络资源。
  */
-public final class OkHttpBuilder {
+final class OkHttpBuilder {
 
     private OkHttpBuilder() {
     }
@@ -29,7 +27,7 @@ public final class OkHttpBuilder {
     /**
      * 生产环境构建一组完全隔离的 API/image OkHttp client。
      */
-    public static HttpClientContext build(PicaConfiguration config) {
+    static HttpClientContext build(PicaConfiguration config) {
         return build(config, null, null, null, null);
     }
 
@@ -125,7 +123,7 @@ public final class OkHttpBuilder {
     /**
      * 只在 core 内部传递的资源组。生产 factory 不把它返回给库调用者。
      */
-    public static final class HttpClientContext {
+    static final class HttpClientContext {
         private final OkHttpClient apiClient;
         private final OkHttpClient imageClient;
         private final PicaDomainManager domainManager;
@@ -141,19 +139,19 @@ public final class OkHttpBuilder {
             this.cookieManager = cookieManager;
         }
 
-        public OkHttpClient getApiClient() {
+        OkHttpClient getApiClient() {
             return apiClient;
         }
 
-        public OkHttpClient getImageClient() {
+        OkHttpClient getImageClient() {
             return imageClient;
         }
 
-        public PicaDomainManager getDomainManager() {
+        PicaDomainManager getDomainManager() {
             return domainManager;
         }
 
-        public CookieManager getCookieManager() {
+        CookieManager getCookieManager() {
             return cookieManager;
         }
     }

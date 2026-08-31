@@ -3,8 +3,6 @@ package io.github.jukomu.picacomic.core;
 import io.github.jukomu.picacomic.api.client.IPicaClient;
 import io.github.jukomu.picacomic.api.exception.ResponseException;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
-import io.github.jukomu.picacomic.core.net.OkHttpBuilder;
-import io.github.jukomu.picacomic.core.net.LocalTlsClientContextFactory;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.mockwebserver.MockResponse;
