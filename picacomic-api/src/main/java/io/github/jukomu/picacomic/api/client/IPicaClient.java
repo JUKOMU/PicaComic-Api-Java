@@ -19,6 +19,12 @@ import java.util.concurrent.ExecutorService;
  */
 public interface IPicaClient extends AutoCloseable {
 
+    /**
+     * 关闭 client 自有网络资源；外部注入的 executor 仍由调用者负责。
+     */
+    @Override
+    void close();
+
     // == 核心数据获取层 ==
 
     /**
@@ -44,7 +50,23 @@ public interface IPicaClient extends AutoCloseable {
      * @param image 图片信息
      * @return 图片的二进制数据
      */
-    byte[] fetchImageBytes(PicaImage image);
+    default byte[] fetchImageBytes(PicaImage image) {
+        try (PicaImageRequest request = newImageRequest(image)) {
+            return request.execute();
+        }
+    }
+
+    /**
+     * 创建一个可取消的同步图片请求句柄。
+     *
+     * <p>句柄本身不会提交任务。调用 {@link PicaImageRequest#execute()} 时在调用线程
+     * 执行，调用者可以从自己的线程池中调用它并通过 {@link PicaImageRequest#cancel()}
+     * 取消当前请求。</p>
+     *
+     * @param image 图片信息
+     * @return 单次图片请求句柄
+     */
+    PicaImageRequest newImageRequest(PicaImage image);
 
     /**
      * 搜索本子

@@ -26,7 +26,9 @@
 
 | 额外功能 | 实现情况 |
 |:---------------------------|:---------------------------------|
-| **内置图片代理(使用wsrv.nl)** | ✅ |
+| **API/image 网络边界** | ✅ 双 OkHttp client、固定 host 策略 |
+| **图片大小与并发边界** | ✅ 单图最多 32 MiB、client 级 64 MiB budget |
+| **原子图片落盘** | ✅ 同目录临时文件 + `ATOMIC_MOVE` |
 
 
 
@@ -80,18 +82,18 @@
 
 此模块包含了所有功能的具体实现逻辑，处理与 PicaComic 服务端的直接交互。
 
-* **客户端实现 (`PicaClient`)**:
+* **客户端实现**:
     * **API 请求**: 通过封装 OkHttp 调用 PicaComic 移动端 API 进行数据交互。
     * **会话管理**: 管理用户的登录状态、Token 凭证维护。
 * **网络处理**:
-    * **分发与域名 (`PicaDomainManager`)**: 包含动态拉取和管理 API 域名的机制。
-    * **请求重试与代理回退**: 
-      * 实现了一套可靠的重试逻辑，并在请求多次失败时提供**内置公共代理回退机制**。
-      * 针对被阻断（例如在某些区域被墙）的图片域名，当重试次数达到指定阈值（默认 `proxyFallbackThreshold` 为 2 次），系统会自动将后续请求重定向至公共图片代理服务（目前使用 `wsrv.nl`）。
-      * 用户也可以通过配置项覆盖内置机制，使用自己的代理服务（Proxy）。
+    * **API/image 分离**: 每个 `IPicaClient` 独占 API 与图片两只 OkHttp client。图片 client 不带 Cookie、Token、签名或 API interceptor。
+    * **安全重试**: 只对 API 的幂等 `GET`/`HEAD` 及 `502/503/504` 或 I/O 错误进行有限直连重试；POST 不自动重发，API 也不自动跟随 redirect。
+    * **图片来源**: 图片只允许以下六个精确 HTTPS host，且路径必须位于 `/static/` 下：`img.picacomic.com`、`s2.picacomic.com`、`s3.picacomic.com`、`storage.picacomic.com`、`storage1.picacomic.com`、`storage-b.picacomic.com`。库不会从 API response、redirect 或运行时配置学习新 host。
 * **并发下载**:
-    * 提供了 `downloadAlbum` 和 `downloadPhoto` 等高级方法，内置了基于 `ExecutorService` 的并发下载调度能力。
+    * 提供了 `downloadAlbum` 和 `downloadPhoto` 等高级方法，叶子图片任务使用调用者提供或 client 自有的 `ExecutorService`。
     * 批量下载操作返回 `DownloadResult` 对象，其中包含了成功与失败任务的详细报告。
+    * 图片单次请求通过 `PicaImageRequest.execute/cancel/close` 保持同步 API，同时允许页面级取消。单图上限为 32 MiB，每个 client 的在途 payload budget 固定为 64 MiB，默认图片并发为 2（可配置范围 1..4）。
+    * 下载文件先完整写入同目录 `.part` 文件，再执行 `ATOMIC_MOVE`；不支持原子移动时失败，不降级为直接覆盖最终文件。
 
 ---
 
@@ -184,7 +186,7 @@ public class DownloaderSample {
             System.out.println("Success: " + result.getSuccessfulFiles().size());
             System.out.println("Failed: " + result.getFailedTasks().size());
             result.getFailedTasks().forEach((image, error) ->
-                    System.err.println("  - Failed to download " + image.getImageId() + ": " + error.getMessage())
+                    System.err.println("  - Failed to download " + image.getOriginalName() + ": " + error.getMessage())
             );
         }
     }
@@ -205,16 +207,22 @@ import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 // import io.github.jukomu.picacomic.api.enums.ImageQuality;
 
 PicaConfiguration config = new PicaConfiguration.Builder()
-        .proxy("127.0.0.1", 7890) // 设置HTTP/SOCKS代理 (推荐中国大陆用户配置)
+        .proxy("127.0.0.1", 7890) // 可选：调用者显式提供的 HTTP 代理
         .timeout(Duration.ofSeconds(60)) // 设置网络超时为60秒
         .retryTimes(5) // 设置最大重试次数
-        .proxyFallbackThreshold(2) // 代理回退阈值
         .downloadThreadPoolSize(12) // 设置内部下载线程池大小
         .concurrentPhotoDownloads(3) // 设置同时下载的章节数
-        .concurrentImageDownloads(20) // 设置同时下载的图片数
+        .concurrentImageDownloads(2) // 设置同时读取图片的数量（范围 1..4）
+        .maxImageBytes(32L * 1024 * 1024) // 单图上限；client 级 64 MiB budget 由库固定管理
         // .imageQuality(ImageQuality.ORIGINAL) // 设置下载的图片质量
         .build();
 ```
+
+代理只作用于该配置创建的 client，可能观察网络元数据；库不会因失败自动启用或切换代理。图片请求始终创建空白 HTTPS `GET`，手动校验最多三跳 redirect，并且不会继承 API 的 Cookie、Token、签名或请求体。
+
+`fetchImageBytes` 是阻塞便利方法；需要取消时使用 `PicaImageRequest request = client.newImageRequest(image)`，在自己的 executor 中调用 `request.execute()`，并在页面销毁时调用 `request.cancel()`/`request.close()`。返回的 `byte[]` 在便利方法返回后归调用者所有，库不限制调用者长期保留它。
+
+图片失败统一抛出 `ImageFetchException`，可通过 `getReason()` 判断 `INVALID_SOURCE`、`DISALLOWED_HOST`、`REDIRECT_REJECTED`、`TOO_LARGE`、`UNSUPPORTED_MEDIA_TYPE`、`TIMEOUT`、`CANCELLED` 或 `CLIENT_CLOSED` 等稳定原因。README 中的示例凭据仅为占位文本；本项目的测试只访问本地 TLS fixture，不访问真实服务。
 
 ### 自定义文件存储路径
 

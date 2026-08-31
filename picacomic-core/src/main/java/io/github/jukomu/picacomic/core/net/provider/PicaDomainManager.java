@@ -1,54 +1,64 @@
 package io.github.jukomu.picacomic.core.net.provider;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 /**
- * @author JUKOMU
- * @Description: 内部类，负责管理和选择域名
- * 它是有状态的，会跟踪每个域名的连续失败次数，并优先选择状态最佳的域名
- * 这个类的实例将与每个 PicaClient 实例一一对应，确保域名状态隔离
- * @Project: PicaComic-Api-Java
- * @Date: 2026/02/19
+ * 管理一个 API client 自己的、固定授权 host 集合及其内存健康分数。
+ *
+ * <p>该类只负责在已授权集合内排序；它没有远程发现、可变 host 集合或代理状态。</p>
  */
 public final class PicaDomainManager {
 
-    private final CopyOnWriteArrayList<String> domains;
-    private final ConcurrentHashMap<String, AtomicInteger> failureCounts = new ConcurrentHashMap<>();
-    // 记录需要强制走代理的域名 (被墙的图片域名)
-    private final Set<String> blockedDomains = ConcurrentHashMap.newKeySet();
-    private volatile boolean initialized = false;
-    private volatile CountDownLatch initLatch = new CountDownLatch(1);
+    private final List<String> domains;
+    private final Map<String, AtomicInteger> failureCounts = new ConcurrentHashMap<>();
 
     public PicaDomainManager(List<String> domains) {
-        this.domains = new CopyOnWriteArrayList<>(domains);
-        domains.forEach(domain -> failureCounts.putIfAbsent(domain, new AtomicInteger(0)));
+        Objects.requireNonNull(domains, "Domains cannot be null");
+        if (domains.isEmpty()) {
+            throw new IllegalArgumentException("At least one API domain is required");
+        }
+        List<String> snapshot = new ArrayList<>(domains.size());
+        for (String domain : domains) {
+            if (domain == null || domain.isBlank()) {
+                throw new IllegalArgumentException("Domain cannot be blank");
+            }
+            if (snapshot.contains(domain)) {
+                throw new IllegalArgumentException("Duplicate domain");
+            }
+            snapshot.add(domain);
+            failureCounts.put(domain, new AtomicInteger());
+        }
+        this.domains = Collections.unmodifiableList(snapshot);
     }
 
     /**
-     * 根据当前失败次数选择一个最佳域名。
-     *
-     * @return 状态最佳的域名。如果没有可用域名则返回 null。
+     * 获取当前失败分数最低的 host。相同分数保持配置顺序。
      */
     public String getBestDomain() {
-        blockUntilInitialized();
-        return domains.stream()
-                .min(Comparator.comparingInt(domain -> failureCounts.get(domain).get()))
-                .orElse(null);
+        return snapshotInPriorityOrder().get(0);
     }
 
     /**
-     * 报告某个域名请求成功。
-     *
-     * @param domain 请求成功的域名。
+     * 为一次逻辑请求生成稳定的 host 优先级快照。
      */
+    public List<String> snapshotInPriorityOrder() {
+        List<String> ordered = new ArrayList<>(domains);
+        ordered.sort(Comparator.comparingInt(domain -> failureCounts.get(domain).get()));
+        return Collections.unmodifiableList(ordered);
+    }
+
+    public boolean contains(String domain) {
+        return domains.contains(domain);
+    }
+
     public void reportSuccess(String domain) {
         AtomicInteger count = failureCounts.get(domain);
         if (count != null) {
@@ -56,94 +66,18 @@ public final class PicaDomainManager {
         }
     }
 
-    /**
-     * 报告某个域名请求失败。
-     *
-     * @param domain 请求失败的域名。
-     */
     public void reportFailure(String domain) {
         AtomicInteger count = failureCounts.get(domain);
         if (count != null) {
-            count.incrementAndGet();
+            count.updateAndGet(value -> value == Integer.MAX_VALUE ? value : value + 1);
         }
     }
 
-    /**
-     * 标记一个域名为"被阻断"，后续针对该域名的请求建议直接走代理。
-     */
-    public void markDomainAsBlocked(String domain) {
-        blockedDomains.add(domain);
-    }
-
-    /**
-     * 检查域名是否已被标记为阻断。
-     */
-    public boolean isDomainBlocked(String domain) {
-        return blockedDomains.contains(domain);
-    }
-
-    /**
-     * 获取所有域名的当前状态，用于调试。
-     *
-     * @return 一个包含域名及其失败次数的Map。
-     */
     public Map<String, Integer> getDomainStates() {
-        blockUntilInitialized();
-        return domains.stream()
-                .collect(Collectors.toMap(
-                        domain -> domain,
-                        domain -> failureCounts.get(domain).get()
-                ));
-    }
-
-    /**
-     * 更新域名列表。
-     *
-     * @param newDomains 最新的域名列表。
-     */
-    public void updateDomains(List<String> newDomains) {
-        // 将新域名添加到列表中
-        domains.clear();
-        domains.addAll(newDomains);
-        failureCounts.clear();
-        domains.forEach(domain -> failureCounts.putIfAbsent(domain, new AtomicInteger(0)));
-    }
-
-    public CopyOnWriteArrayList<String> getDomains() {
-        return domains;
-    }
-
-    public boolean isInitialized() {
-        return initialized;
-    }
-
-    /**
-     * 设置初始化状态
-     */
-    public void setInitialized(boolean initialized) {
-        this.initialized = initialized;
-        if (initialized) {
-            if (initLatch.getCount() > 0) {
-                initLatch.countDown();
-            }
-        } else {
-            if (initLatch.getCount() == 0) {
-                initLatch = new CountDownLatch(1);
-            }
+        Map<String, Integer> states = new LinkedHashMap<>();
+        for (String domain : domains) {
+            states.put(domain, failureCounts.get(domain).get());
         }
-    }
-
-    /**
-     * 阻塞等待直到初始化完成
-     */
-    private void blockUntilInitialized() {
-        if (this.initialized) return;
-        try {
-            CountDownLatch latch = this.initLatch;
-            latch.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Wait for initialization was interrupted", e);
-        }
+        return Collections.unmodifiableMap(states);
     }
 }

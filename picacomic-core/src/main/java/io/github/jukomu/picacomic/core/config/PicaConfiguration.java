@@ -1,90 +1,88 @@
 package io.github.jukomu.picacomic.core.config;
 
 import io.github.jukomu.picacomic.api.enums.ImageQuality;
-import io.github.jukomu.picacomic.core.cache.CacheKey;
-import io.github.jukomu.picacomic.core.cache.CachePool;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 /**
- * @author JUKOMU
- * @Description: PicaClient 的不可变配置对象
- * 使用 {@link Builder} 模式进行构建
- * 此对象封装了所有用于创建和定制 PicaClient 实例所需的信息
- * @Project: PicaComic-Api-Java
- * @Date: 2026/02/19
+ * 创建 client 所需的不可变 value snapshot。
+ *
+ * <p>运行时状态（Cookie、缓存、域名健康度、图片预算和关闭状态）不属于配置，
+ * 因而同一个配置可以安全地创建多个相互隔离的 client。</p>
  */
 public final class PicaConfiguration {
-    // 存储的域名
+
+    public static final int DEFAULT_MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+    public static final int MIN_CONCURRENT_DOWNLOADS = 1;
+    public static final int MAX_CONCURRENT_DOWNLOADS = 4;
+
     private final List<String> domains;
-    // 代理设置
     private final Proxy proxy;
-    // 请求头
-    private final Map<String, String> headers;
-    // 超时时间
     private final Duration timeout;
-    // 重试次数
     private final int retryTimes;
-    // 代理回退阈值
-    private final int proxyFallbackThreshold;
-    // 请求的线程池
     private final ExecutorService executor;
-    // 线程池大小
     private final int downloadThreadPoolSize;
-    // 缓存大小, 单位: Byte
-    private final CachePool<CacheKey, Object> cachePool;
-    // 同时下载的章节数
+    private final int cacheSize;
     private final int concurrentPhotoDownloads;
-    // 同时下载的图片数
     private final int concurrentImageDownloads;
     private final ImageQuality imageQuality;
+    private final int maxImageBytes;
 
     private PicaConfiguration(Builder builder) {
-        this.domains = Collections.unmodifiableList(builder.domains);
+        this.domains = normalizeDomains(builder.domains);
         this.proxy = builder.proxy;
-        this.headers = Collections.unmodifiableMap(new HashMap<>(builder.headers));
-        this.timeout = builder.timeout;
-        this.retryTimes = builder.retryTimes;
-        this.proxyFallbackThreshold = builder.proxyFallbackThreshold;
+        this.timeout = validateTimeout(builder.timeout);
+        this.retryTimes = validateNonNegative(builder.retryTimes, "Retry times");
         this.executor = builder.executor;
-        this.downloadThreadPoolSize = builder.downloadThreadPoolSize;
-        this.cachePool = new CachePool<>(builder.cacheSize);
-        this.concurrentPhotoDownloads = builder.concurrentPhotoDownloads;
-        this.concurrentImageDownloads = builder.concurrentImageDownloads;
-        this.imageQuality = builder.imageQuality;
+        this.downloadThreadPoolSize = validatePositive(builder.downloadThreadPoolSize, "Download thread pool size");
+        this.cacheSize = validateNonNegative(builder.cacheSize, "Cache size");
+        this.concurrentPhotoDownloads = validateConcurrent(builder.concurrentPhotoDownloads, "Concurrent photo downloads");
+        this.concurrentImageDownloads = validateConcurrent(builder.concurrentImageDownloads, "Concurrent image downloads");
+        this.imageQuality = Objects.requireNonNull(builder.imageQuality, "Image quality cannot be null");
+        this.maxImageBytes = validateMaxImageBytes(builder.maxImageBytes);
     }
 
-
+    /**
+     * 获取调用者显式提供的 API host 快照。空列表表示使用 core 的默认 API hosts。
+     */
     public List<String> getDomains() {
         return domains;
     }
 
+    /**
+     * 获取调用者显式配置的传输代理。库不会在失败时自行切换代理。
+     */
     public Proxy getProxy() {
         return proxy;
-    }
-
-    public Map<String, String> getHeaders() {
-        return headers;
     }
 
     public Duration getTimeout() {
         return timeout;
     }
 
+    /**
+     * 首次请求之后允许的额外 GET/HEAD 尝试次数。
+     */
     public int getRetryTimes() {
         return retryTimes;
     }
 
-    public int getProxyFallbackThreshold() {
-        return proxyFallbackThreshold;
-    }
-
+    /**
+     * 外部下载 executor。该 executor 的生命周期始终由调用者负责。
+     */
     public ExecutorService getExecutor() {
         return executor;
     }
@@ -93,8 +91,8 @@ public final class PicaConfiguration {
         return downloadThreadPoolSize;
     }
 
-    public CachePool<CacheKey, Object> getCachePool() {
-        return cachePool;
+    public int getCacheSize() {
+        return cacheSize;
     }
 
     public int getConcurrentPhotoDownloads() {
@@ -109,65 +107,48 @@ public final class PicaConfiguration {
         return imageQuality;
     }
 
+    public int getMaxImageBytes() {
+        return maxImageBytes;
+    }
+
     /**
-     * 用于创建 PicaConfiguration 实例的 Builder
+     * 用于创建 {@link PicaConfiguration} 的 Builder。
      */
     public static class Builder {
-        private List<String> domains = new java.util.ArrayList<>();
+        private List<String> domains = new ArrayList<>();
         private Proxy proxy;
-        private final Map<String, String> headers = new HashMap<>();
         private Duration timeout = Duration.ofSeconds(30);
         private int retryTimes = 5;
-        private int proxyFallbackThreshold = 2;
-        private ExecutorService executor = null;
-        private int downloadThreadPoolSize = 12; // -1 表示使用默认值 (CPU核心数)
+        private ExecutorService executor;
+        private int downloadThreadPoolSize = 12;
         private int cacheSize = 100 * 1024 * 1024;
         private int concurrentPhotoDownloads = 3;
-        private int concurrentImageDownloads = 20;
+        private int concurrentImageDownloads = 2;
         private ImageQuality imageQuality = ImageQuality.MEDIUM;
-
+        private long maxImageBytes = DEFAULT_MAX_IMAGE_BYTES;
 
         public Builder domains(List<String> domains) {
-            this.domains = new java.util.ArrayList<>(Objects.requireNonNull(domains));
+            this.domains = new ArrayList<>(Objects.requireNonNull(domains, "Domains cannot be null"));
             return this;
         }
 
         public Builder proxy(String host, int port) {
-            this.proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(host, port));
-            return this;
-        }
-
-        public Builder header(String key, String value) {
-            this.headers.put(key, value);
-            return this;
-        }
-
-        public Builder headers(Map<String, String> headers) {
-            this.headers.putAll(headers);
+            this.proxy = createProxy(host, port);
             return this;
         }
 
         public Builder timeout(Duration timeout) {
-            this.timeout = Objects.requireNonNull(timeout);
+            this.timeout = validateTimeout(timeout);
             return this;
         }
 
         public Builder retryTimes(int retryTimes) {
-            if (retryTimes < 0) throw new IllegalArgumentException("Retry times must be non-negative.");
-            this.retryTimes = retryTimes;
-            return this;
-        }
-
-        public Builder proxyFallbackThreshold(int proxyFallbackThreshold) {
-            if (proxyFallbackThreshold < 0)
-                throw new IllegalArgumentException("Proxy fallback threshold must be non-negative.");
-            this.proxyFallbackThreshold = proxyFallbackThreshold;
+            this.retryTimes = validateNonNegative(retryTimes, "Retry times");
             return this;
         }
 
         public Builder downloadThreadPoolSize(int size) {
-            if (size <= 0) throw new IllegalArgumentException("Thread pool size must be positive.");
-            this.downloadThreadPoolSize = size;
+            this.downloadThreadPoolSize = validatePositive(size, "Download thread pool size");
             return this;
         }
 
@@ -177,48 +158,177 @@ public final class PicaConfiguration {
         }
 
         public Builder cacheSize(int size) {
-            if (size < 0) throw new IllegalArgumentException("Cache size must be non-negative.");
-            this.cacheSize = size;
+            this.cacheSize = validateNonNegative(size, "Cache size");
             return this;
         }
 
         public Builder concurrentPhotoDownloads(int size) {
-            if (size < 0) throw new IllegalArgumentException("Concurrent photo uploads must be non-negative.");
-            this.concurrentPhotoDownloads = size;
+            this.concurrentPhotoDownloads = validateConcurrent(size, "Concurrent photo downloads");
             return this;
         }
 
         public Builder concurrentImageDownloads(int size) {
-            if (size < 0) throw new IllegalArgumentException("Concurrent image uploads must be non-negative.");
-            this.concurrentImageDownloads = size;
+            this.concurrentImageDownloads = validateConcurrent(size, "Concurrent image downloads");
             return this;
         }
 
         public Builder imageQuality(ImageQuality imageQuality) {
-            this.imageQuality = imageQuality;
+            this.imageQuality = Objects.requireNonNull(imageQuality, "Image quality cannot be null");
             return this;
         }
 
+        public Builder maxImageBytes(long maxImageBytes) {
+            this.maxImageBytes = validateMaxImageBytes(maxImageBytes);
+            return this;
+        }
+
+        /**
+         * 从 properties 读取仍属于 U1 的基础网络配置。
+         */
         public Builder loadFromProperties(InputStream inputStream) throws IOException {
             Properties props = new Properties();
-            props.load(inputStream);
+            props.load(Objects.requireNonNull(inputStream, "Input stream cannot be null"));
 
             if (props.containsKey("proxy.host") && props.containsKey("proxy.port")) {
-                this.proxy(props.getProperty("proxy.host"), Integer.parseInt(props.getProperty("proxy.port")));
+                proxy(props.getProperty("proxy.host"), Integer.parseInt(props.getProperty("proxy.port")));
             }
             if (props.containsKey("retry.times")) {
-                this.retryTimes(Integer.parseInt(props.getProperty("retry.times")));
+                retryTimes(Integer.parseInt(props.getProperty("retry.times")));
             }
-            // 可以根据需要添加更多从 properties 加载的配置项
-
+            if (props.containsKey("max.image.bytes")) {
+                maxImageBytes(Long.parseLong(props.getProperty("max.image.bytes")));
+            }
             return this;
         }
 
         public PicaConfiguration build() {
-            if (this.executor != null) {
-                this.downloadThreadPoolSize = -1;
-            }
+            // external executor 的 pool-size value 仍是 snapshot 的普通配置，不改写为哨兵值。
             return new PicaConfiguration(this);
         }
+    }
+
+    /**
+     * 用于 core 对调用者配置和默认配置执行相同的 DNS host 语法检查。
+     */
+    public static String normalizeDomain(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("Domain cannot be blank");
+        }
+        if (!raw.equals(raw.trim())) {
+            throw new IllegalArgumentException("Domain cannot contain surrounding whitespace");
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            if (raw.charAt(i) > 0x7f || Character.isWhitespace(raw.charAt(i))) {
+                throw new IllegalArgumentException("Domain must be ASCII without whitespace");
+            }
+        }
+        String domain = raw.toLowerCase(Locale.ROOT);
+        if (domain.length() > 253 || domain.startsWith(".") || domain.endsWith(".")) {
+            throw new IllegalArgumentException("Invalid DNS domain");
+        }
+        if (isIpv4Literal(domain) || domain.contains(":")) {
+            throw new IllegalArgumentException("IP literal is not an allowed DNS domain");
+        }
+
+        String[] labels = domain.split("\\.", -1);
+        if (labels.length == 0) {
+            throw new IllegalArgumentException("Invalid DNS domain");
+        }
+        for (String label : labels) {
+            if (label.isEmpty() || label.length() > 63 || label.startsWith("-") || label.endsWith("-")) {
+                throw new IllegalArgumentException("Invalid DNS label");
+            }
+            for (int i = 0; i < label.length(); i++) {
+                char ch = label.charAt(i);
+                if (!(ch >= 'a' && ch <= 'z') && !(ch >= '0' && ch <= '9') && ch != '-') {
+                    throw new IllegalArgumentException("Invalid DNS label");
+                }
+            }
+        }
+        return domain;
+    }
+
+    private static List<String> normalizeDomains(List<String> rawDomains) {
+        Objects.requireNonNull(rawDomains, "Domains cannot be null");
+        Set<String> unique = new LinkedHashSet<>();
+        for (String domain : rawDomains) {
+            if (!unique.add(normalizeDomain(domain))) {
+                throw new IllegalArgumentException("Duplicate domain");
+            }
+        }
+        return Collections.unmodifiableList(new ArrayList<>(unique));
+    }
+
+    private static Proxy createProxy(String host, int port) {
+        if (host == null || host.isBlank() || !host.equals(host.trim())) {
+            throw new IllegalArgumentException("Proxy host cannot be blank");
+        }
+        for (int i = 0; i < host.length(); i++) {
+            if (Character.isISOControl(host.charAt(i)) || Character.isWhitespace(host.charAt(i))) {
+                throw new IllegalArgumentException("Proxy host cannot contain whitespace or control characters");
+            }
+        }
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException("Proxy port must be between 1 and 65535");
+        }
+        return new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(host, port));
+    }
+
+    private static boolean isIpv4Literal(String value) {
+        String[] parts = value.split("\\.", -1);
+        if (parts.length != 4) {
+            return false;
+        }
+        for (String part : parts) {
+            if (part.isEmpty() || part.length() > 3) {
+                return false;
+            }
+            try {
+                int number = Integer.parseInt(part);
+                if (number < 0 || number > 255) {
+                    return false;
+                }
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static Duration validateTimeout(Duration timeout) {
+        Objects.requireNonNull(timeout, "Timeout cannot be null");
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("Timeout must be positive");
+        }
+        return timeout;
+    }
+
+    private static int validateNonNegative(int value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must be non-negative");
+        }
+        return value;
+    }
+
+    private static int validatePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+        return value;
+    }
+
+    private static int validateConcurrent(int value, String name) {
+        if (value < MIN_CONCURRENT_DOWNLOADS || value > MAX_CONCURRENT_DOWNLOADS) {
+            throw new IllegalArgumentException(name + " must be between "
+                    + MIN_CONCURRENT_DOWNLOADS + " and " + MAX_CONCURRENT_DOWNLOADS);
+        }
+        return value;
+    }
+
+    private static int validateMaxImageBytes(long value) {
+        if (value < 1 || value > DEFAULT_MAX_IMAGE_BYTES) {
+            throw new IllegalArgumentException("Max image bytes must be between 1 and 32 MiB");
+        }
+        return (int) value;
     }
 }

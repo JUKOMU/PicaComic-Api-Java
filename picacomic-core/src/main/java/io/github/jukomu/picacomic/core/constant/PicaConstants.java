@@ -1,7 +1,7 @@
 package io.github.jukomu.picacomic.core.constant;
 
-import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author JUKOMU
@@ -38,9 +38,23 @@ public final class PicaConstants {
     public static final String ENCRYPTED_HMAC_KEY = "aGh+G0dwfHpGUGRmYGxrGUFsZmRyGUMZa19kfUxfRxMfXGAaGxNBbmBhZRpMQUFma20Bbn58YElIYGQTbGdsQkxrfEd8X3xueBocH1JQf2RpSG9B";
 
     // == 域名 ==
-    public static List<String> DEFAULT_DOMAINS = Collections.unmodifiableList(List.of(
+    public static final List<String> DEFAULT_DOMAINS = List.of(
             "picacomic.com",
             "picaapi.go2778.com",
             "picaapi.acbbb.com"
-    ));
+    );
+
+    /**
+     * U1 任务所有者批准的精确图片 host 集合。
+     *
+     * <p>这是固定策略输入，不从 API response、redirect 或图片 locator 动态扩张。</p>
+     */
+    public static final Set<String> IMAGE_HOST_ALLOWLIST = Set.of(
+            "img.picacomic.com",
+            "s2.picacomic.com",
+            "s3.picacomic.com",
+            "storage.picacomic.com",
+            "storage1.picacomic.com",
+            "storage-b.picacomic.com"
+    );
 }

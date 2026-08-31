@@ -18,7 +18,7 @@ public class DefaultPhotoPathGenerator implements IPhotoPathGenerator {
         if (photo.isSingleAlbum()) {
             return Path.of("");
         }
-        return Path.of(FileUtils.sanitizeFilename(String.valueOf(photo.getOrder())),
-                photo.getTitle());
+        return Path.of(FileUtils.safePathSegment(String.valueOf(photo.getOrder())),
+                FileUtils.safePathSegment(photo.getTitle()));
     }
 }
