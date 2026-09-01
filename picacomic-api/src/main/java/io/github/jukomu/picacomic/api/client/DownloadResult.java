@@ -4,6 +4,8 @@ import io.github.jukomu.picacomic.api.model.PicaImage;
 
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -18,8 +20,10 @@ public final class DownloadResult {
     private final Map<PicaImage, Exception> failedTasks;
 
     public DownloadResult(List<Path> successfulFiles, Map<PicaImage, Exception> failedTasks) {
-        this.successfulFiles = Collections.unmodifiableList(successfulFiles);
-        this.failedTasks = Collections.unmodifiableMap(failedTasks);
+        this.successfulFiles = Collections.unmodifiableList(new ArrayList<>(
+                successfulFiles == null ? List.of() : successfulFiles));
+        this.failedTasks = Collections.unmodifiableMap(new LinkedHashMap<>(
+                failedTasks == null ? Map.of() : failedTasks));
     }
 
     /**

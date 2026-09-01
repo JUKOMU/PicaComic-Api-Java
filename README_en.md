@@ -24,7 +24,9 @@
 
 | Additional Features | Implementation Status |
 |:---------------------------|:---------------------------------|
-| **Built-in Image Proxy (using wsrv.nl)** | ✅ |
+| **API/image network boundary** | ✅ Separate OkHttp clients with API host probing and retries |
+| **Image concurrency boundary** | ✅ Per-client fair semaphore driven by configuration |
+| **Atomic image landing** | ✅ Same-directory temporary file + `ATOMIC_MOVE` |
 
 
 
@@ -78,18 +80,18 @@ This module defines the public contract of the library. It contains no third-par
 
 This module contains the specific implementation logic for all features, handling direct interactions with the PicaComic server.
 
-* **Client Implementation (`PicaClient`)**:
+* **Client implementation**:
     * **API Requests**: Encapsulates OkHttp to call the PicaComic mobile API for data interaction.
     * **Session Management**: Manages user login states and Token credential maintenance.
 * **Network Processing**:
-    * **Distribution and Domains (`PicaDomainManager`)**: Contains the mechanism for dynamically fetching and managing API domains.
-    * **Request Retry and Proxy Fallback:**
-      * Implements a reliable retry logic and provides a **built-in public proxy fallback mechanism** when requests fail multiple times.
-      * For blocked image domains (e.g., those restricted by the Great Firewall in certain regions), when the number of retries reaches a specified threshold (default `proxyFallbackThreshold` is 2), the system will automatically redirect subsequent requests to a public image proxy service (currently using `wsrv.nl`).
-      * Users can also override the built-in mechanism through configuration options to use their own proxy service.
+    * **API/image separation**: Each `IPicaClient` owns two OkHttp clients. The image client has no Cookie, token, signature, or API interceptor.
+    * **Safe retries**: API requests select the best host from the configured pool and retry, within `retryTimes`, on I/O, `403`, or any `5xx` response. GET and POST use the same rules. API requests use OkHttp's default redirect behavior.
+    * **Image sources**: Image URLs come from the model or caller and are parsed by OkHttp. The image client carries no API credentials, follows default redirects, and accepts successful `2xx` bodies and standard gzip.
 * **Concurrent Downloading**:
-    * Provides advanced methods like `downloadAlbum` and `downloadPhoto` with built-in concurrent download scheduling capabilities based on `ExecutorService`.
+    * Provides advanced methods like `downloadAlbum` and `downloadPhoto`; only leaf image work is submitted to the caller-provided or client-owned `ExecutorService`.
     * Batch download operations return a `DownloadResult` object, which contains detailed reports of successful and failed tasks.
+    * `PicaImageRequest.execute/cancel/close` keeps single-image access blocking while allowing page-level cancellation. Image concurrency defaults to 20 and accepts positive configuration values.
+    * Files are written completely to a same-directory `.part` file before `ATOMIC_MOVE`; filesystems without atomic move use `REPLACE_EXISTING`, and failures or cancellation clean up the temporary file.
 
 ---
 
@@ -182,7 +184,7 @@ public class DownloaderSample {
             System.out.println("Success: " + result.getSuccessfulFiles().size());
             System.out.println("Failed: " + result.getFailedTasks().size());
             result.getFailedTasks().forEach((image, error) ->
-                    System.err.println("  - Failed to download " + image.getImageId() + ": " + error.getMessage())
+                    System.err.println("  - Failed to download " + image.getOriginalName() + ": " + error.getMessage())
             );
         }
     }
@@ -203,16 +205,26 @@ import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 // import io.github.jukomu.picacomic.api.enums.ImageQuality;
 
 PicaConfiguration config = new PicaConfiguration.Builder()
-        .proxy("127.0.0.1", 7890) // Set HTTP/SOCKS proxy (Recommended for users in mainland China)
+        .proxy("127.0.0.1", 7890) // Optional caller-provided HTTP proxy
         .timeout(Duration.ofSeconds(60)) // Set network timeout to 60 seconds
         .retryTimes(5) // Set maximum retry times
-        .proxyFallbackThreshold(2) // Proxy fallback threshold
+        .imageTimeout(Duration.ofSeconds(60)) // Image read timeout
         .downloadThreadPoolSize(12) // Set internal download thread pool size
         .concurrentPhotoDownloads(3) // Set the number of concurrent chapter downloads
-        .concurrentImageDownloads(20) // Set the number of concurrent image downloads
+        .concurrentImageDownloads(20) // Number of concurrent image readers (must be positive)
         // .imageQuality(ImageQuality.ORIGINAL) // Set downloaded image quality
         .build();
 ```
+
+`downloadThreadPoolSize` defaults to 12, `concurrentPhotoDownloads` defaults to 3, and `concurrentImageDownloads` defaults to 20. All three values must be positive and have no library-level hard upper bound. `imageTimeout` defaults to 60 seconds and applies only to image reads. With `loadFromProperties`, use `download.thread.pool.size`, `concurrent.photo.downloads`, `concurrent.image.downloads`, and `image.timeout.seconds` respectively.
+
+The default API host pool contains `picacomic.com`, `picaapi.go2778.com`, `picaapi.acbbb.com`, and `picaapi.picacomic.com`. A `domains(...)` value replaces that pool and is probed before the first API request. Configured hosts are treated as equivalent mirrors; the library does not discover new hosts from network responses.
+
+The proxy applies only to clients created from this configuration and may observe network metadata. The library never enables or switches to a proxy after a failure. API hosts are probed with HEAD before the first API request and periodically thereafter. Image requests are synchronous blank `GET` requests and never inherit API cookies, tokens, signatures, or request bodies; `closeTimeoutMs` controls how long client close waits for its own download tasks.
+
+`fetchImageBytes` is blocking. For cancellation, create `PicaImageRequest request = client.newImageRequest(image)`, call `request.execute()` from an executor owned by your application, and call `request.cancel()`/`request.close()` when the page is destroyed. The returned `byte[]` belongs to the caller after the convenience method returns; the library cannot limit how long the caller retains it.
+
+Image failures are reported as `ImageFetchException`; use `getReason()` for stable values such as `INVALID_SOURCE`, `HTTP_STATUS`, `INVALID_CONTENT`, `TRUNCATED_BODY`, `TIMEOUT`, `CANCELLED`, and `CLIENT_CLOSED`. Credentials in the examples are placeholders only; tests use local TLS fixtures and never access the real service.
 
 ### Custom File Storage Path
 

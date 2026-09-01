@@ -1,6 +1,5 @@
 package io.github.jukomu.picacomic.core.constant;
 
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -38,9 +37,10 @@ public final class PicaConstants {
     public static final String ENCRYPTED_HMAC_KEY = "aGh+G0dwfHpGUGRmYGxrGUFsZmRyGUMZa19kfUxfRxMfXGAaGxNBbmBhZRpMQUFma20Bbn58YElIYGQTbGdsQkxrfEd8X3xueBocH1JQf2RpSG9B";
 
     // == 域名 ==
-    public static List<String> DEFAULT_DOMAINS = Collections.unmodifiableList(List.of(
-            "picacomic.com",
+    public static final List<String> DEFAULT_DOMAINS = List.of(
             "picaapi.go2778.com",
-            "picaapi.acbbb.com"
-    ));
+            "picacomic.com",
+            "picaapi.acbbb.com",
+            "picaapi.picacomic.com"
+    );
 }

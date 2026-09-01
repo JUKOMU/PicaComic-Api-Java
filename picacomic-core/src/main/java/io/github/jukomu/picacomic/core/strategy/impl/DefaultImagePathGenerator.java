@@ -15,6 +15,6 @@ import java.nio.file.Path;
 public class DefaultImagePathGenerator implements IImagePathGenerator {
     @Override
     public Path generatePath(PicaImage image) {
-        return Path.of(FileUtils.sanitizeFilename(image.getOriginalName()));
+        return Path.of(FileUtils.safePathSegment(image.getOriginalName()));
     }
 }

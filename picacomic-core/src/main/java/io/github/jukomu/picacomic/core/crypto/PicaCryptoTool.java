@@ -101,7 +101,6 @@ public final class PicaCryptoTool {
             }
 
             byte[] finalBytes = Base64.getDecoder().decode(step3.toString());
-            System.out.println(new String(finalBytes, StandardCharsets.UTF_8));
             return new String(finalBytes, StandardCharsets.UTF_8);
 
         } catch (Exception e) {

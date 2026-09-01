@@ -29,11 +29,11 @@ public record PicaImage(
      * 构建完整的图片 URL
      */
     public String getImageUrl() {
-        if (imageUrl != null && !imageUrl.isEmpty()) {
+        if (imageUrl != null && !imageUrl.isBlank()) {
             return imageUrl;
         }
-        if (fileServer == null || path == null) {
-            return "https://manhuabika.com/assets/placeholder_avatar_2-BAyIUBTE.png";
+        if (fileServer == null || fileServer.isBlank() || path == null || path.isBlank()) {
+            throw new IllegalStateException("Image locator is incomplete");
         }
         String fs = fileServer.endsWith("/") ? fileServer.substring(0, fileServer.length() - 1) : fileServer;
         String p = path.startsWith("/") ? path.substring(1) : path;

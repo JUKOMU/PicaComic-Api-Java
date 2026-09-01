@@ -15,8 +15,8 @@ import java.nio.file.Path;
 public class DefaultAlbumPathGenerator implements IAlbumPathGenerator {
     @Override
     public Path generatePath(PicaAlbum album) {
-        return Path.of(FileUtils.sanitizeFilename(album.getAuthor()),
-                FileUtils.sanitizeFilename(album.getTitle()),
-                album.getId());
+        return Path.of(FileUtils.safePathSegment(album.getAuthor()),
+                FileUtils.safePathSegment(album.getTitle()),
+                FileUtils.safePathSegment(album.getId()));
     }
 }
