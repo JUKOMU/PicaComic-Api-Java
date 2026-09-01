@@ -1,7 +1,6 @@
 package io.github.jukomu.picacomic.core.constant;
 
 import java.util.List;
-import java.util.Set;
 
 /**
  * @author JUKOMU
@@ -41,20 +40,7 @@ public final class PicaConstants {
     public static final List<String> DEFAULT_DOMAINS = List.of(
             "picacomic.com",
             "picaapi.go2778.com",
-            "picaapi.acbbb.com"
-    );
-
-    /**
-     * 精确图片 host 集合。
-     *
-     * <p>这是固定策略输入，不从 API response、redirect 或图片 locator 动态扩张。</p>
-     */
-    public static final Set<String> IMAGE_HOST_ALLOWLIST = Set.of(
-            "img.picacomic.com",
-            "s2.picacomic.com",
-            "s3.picacomic.com",
-            "storage.picacomic.com",
-            "storage1.picacomic.com",
-            "storage-b.picacomic.com"
+            "picaapi.acbbb.com",
+            "picaapi.picacomic.com"
     );
 }

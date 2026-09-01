@@ -1,6 +1,7 @@
 package io.github.jukomu.picacomic.core.util;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -93,12 +94,16 @@ public final class FileUtils {
     }
 
     /**
-     * 仅使用 ATOMIC_MOVE，文件系统不支持时将 AtomicMoveNotSupportedException 原样交给调用者。
+     * 先尝试原子移动；文件系统不支持时使用同目录的替换移动。
      */
     public static void moveAtomically(Path temporary, Path target) throws IOException {
         Objects.requireNonNull(temporary, "Temporary path cannot be null");
         Path normalizedTarget = normalizeAbsolute(target);
-        Files.move(temporary, normalizedTarget, StandardCopyOption.ATOMIC_MOVE);
+        try {
+            Files.move(temporary, normalizedTarget, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(temporary, normalizedTarget, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     public static void deleteQuietly(Path path) {

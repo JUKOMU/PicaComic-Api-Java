@@ -63,6 +63,7 @@ class PicaDomainManagerConcurrencyTest {
             }
         } finally {
             reporters.shutdownNow();
+            manager.shutdown();
         }
     }
 

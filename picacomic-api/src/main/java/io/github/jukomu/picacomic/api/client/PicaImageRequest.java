@@ -12,7 +12,7 @@ public interface PicaImageRequest extends AutoCloseable {
     /**
      * 在调用线程同步执行图片请求。
      *
-     * @return 完整且通过边界校验的图片 bytes
+     * @return 完整的图片 response body bytes
      */
     byte[] execute();
 

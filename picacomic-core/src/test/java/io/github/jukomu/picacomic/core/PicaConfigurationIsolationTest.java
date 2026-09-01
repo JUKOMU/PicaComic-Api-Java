@@ -58,17 +58,31 @@ class PicaConfigurationIsolationTest {
         assertEquals(12, defaults.getDownloadThreadPoolSize());
         assertEquals(3, defaults.getConcurrentPhotoDownloads());
         assertEquals(20, defaults.getConcurrentImageDownloads());
+        assertEquals(Duration.ofSeconds(60), defaults.getImageTimeout());
+        assertEquals(600_000L, defaults.getDomainProbeIntervalMs());
+        assertEquals(3_000L, defaults.getDomainProbeTimeoutMs());
+        assertEquals(60_000L, defaults.getCloseTimeoutMs());
+        assertTrue(PicaConstants.DEFAULT_DOMAINS.contains("picaapi.picacomic.com"));
+        assertTrue(PicaConstants.DEFAULT_DOMAINS.stream().noneMatch("wsrv.nl"::equals));
 
         PicaConfiguration fromProperties = new PicaConfiguration.Builder()
                 .loadFromProperties(new ByteArrayInputStream((
                         "download.thread.pool.size=17\n"
                                 + "concurrent.photo.downloads=19\n"
-                                + "concurrent.image.downloads=23\n")
+                                + "concurrent.image.downloads=23\n"
+                                + "domain.probe.interval.ms=41\n"
+                                + "domain.probe.timeout.ms=43\n"
+                                + "image.timeout.seconds=47\n"
+                                + "close.timeout.ms=53\n")
                         .getBytes(StandardCharsets.UTF_8)))
                 .build();
         assertEquals(17, fromProperties.getDownloadThreadPoolSize());
         assertEquals(19, fromProperties.getConcurrentPhotoDownloads());
         assertEquals(23, fromProperties.getConcurrentImageDownloads());
+        assertEquals(41L, fromProperties.getDomainProbeIntervalMs());
+        assertEquals(43L, fromProperties.getDomainProbeTimeoutMs());
+        assertEquals(Duration.ofSeconds(47), fromProperties.getImageTimeout());
+        assertEquals(53L, fromProperties.getCloseTimeoutMs());
     }
 
     @Test
@@ -81,6 +95,16 @@ class PicaConfigurationIsolationTest {
                 () -> new PicaConfiguration.Builder().domains(List.of("api.test", "API.TEST")).build());
         assertThrows(IllegalArgumentException.class,
                 () -> new PicaConfiguration.Builder().timeout(Duration.ZERO).build());
+        assertThrows(IllegalArgumentException.class,
+                () -> new PicaConfiguration.Builder().imageTimeout(Duration.ZERO).build());
+        assertThrows(IllegalArgumentException.class,
+                () -> new PicaConfiguration.Builder().domainProbeTimeoutMs(0));
+        assertThrows(IllegalArgumentException.class,
+                () -> new PicaConfiguration.Builder().domainProbeTimeoutMs(-1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new PicaConfiguration.Builder().domainProbeIntervalMs(-1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new PicaConfiguration.Builder().closeTimeoutMs(-1));
         assertThrows(IllegalArgumentException.class,
                 () -> new PicaConfiguration.Builder().proxy(" ", 8080));
         assertThrows(IllegalArgumentException.class,
@@ -109,7 +133,7 @@ class PicaConfigurationIsolationTest {
     }
 
     @Test
-    void resultsAndAllowlistDoNotExposeMutableBackingCollections() {
+    void resultsAndConfiguredHostsDoNotExposeMutableBackingCollections() {
         PicaImage image = new PicaImage("one.png", "p", "https://s2.picacomic.com", null);
         List<Path> files = new ArrayList<>(List.of(Path.of("one.png")));
         Map<PicaImage, Exception> failures = new HashMap<>();
@@ -125,12 +149,6 @@ class PicaConfigurationIsolationTest {
                 () -> result.getFailedTasks().put(image, new Exception()));
         assertThrows(UnsupportedOperationException.class,
                 () -> PicaConstants.DEFAULT_DOMAINS.add("other.test"));
-        assertThrows(UnsupportedOperationException.class,
-                () -> PicaConstants.IMAGE_HOST_ALLOWLIST.add("other.test"));
-        assertEquals(java.util.Set.of(
-                        "img.picacomic.com", "s2.picacomic.com", "s3.picacomic.com",
-                        "storage.picacomic.com", "storage1.picacomic.com", "storage-b.picacomic.com"),
-                PicaConstants.IMAGE_HOST_ALLOWLIST);
     }
 
     @Test

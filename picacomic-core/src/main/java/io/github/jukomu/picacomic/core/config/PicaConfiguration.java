@@ -29,6 +29,10 @@ public final class PicaConfiguration {
     private final Proxy proxy;
     private final Duration timeout;
     private final int retryTimes;
+    private final long domainProbeIntervalMs;
+    private final long domainProbeTimeoutMs;
+    private final Duration imageTimeout;
+    private final long closeTimeoutMs;
     private final ExecutorService executor;
     private final int downloadThreadPoolSize;
     private final int cacheSize;
@@ -40,6 +44,12 @@ public final class PicaConfiguration {
         this.proxy = builder.proxy;
         this.timeout = validateTimeout(builder.timeout);
         this.retryTimes = validateNonNegative(builder.retryTimes, "Retry times");
+        this.domainProbeIntervalMs = validateNonNegative(builder.domainProbeIntervalMs,
+                "Domain probe interval");
+        this.domainProbeTimeoutMs = validatePositiveLong(builder.domainProbeTimeoutMs,
+                "Domain probe timeout");
+        this.imageTimeout = validateTimeout(builder.imageTimeout);
+        this.closeTimeoutMs = validateNonNegative(builder.closeTimeoutMs, "Close timeout");
         this.executor = builder.executor;
         this.downloadThreadPoolSize = validatePositive(builder.downloadThreadPoolSize, "Download thread pool size");
         this.cacheSize = validateNonNegative(builder.cacheSize, "Cache size");
@@ -71,6 +81,34 @@ public final class PicaConfiguration {
      */
     public int getRetryTimes() {
         return retryTimes;
+    }
+
+    /**
+     * 获取 API host 周期探测间隔；零值表示不启动周期探测。
+     */
+    public long getDomainProbeIntervalMs() {
+        return domainProbeIntervalMs;
+    }
+
+    /**
+     * 获取单个 API host 探测的网络超时。
+     */
+    public long getDomainProbeTimeoutMs() {
+        return domainProbeTimeoutMs;
+    }
+
+    /**
+     * 获取图片 response body 的读取超时。
+     */
+    public Duration getImageTimeout() {
+        return imageTimeout;
+    }
+
+    /**
+     * 获取 client 关闭时等待自有批量任务的最长时间。
+     */
+    public long getCloseTimeoutMs() {
+        return closeTimeoutMs;
     }
 
     /**
@@ -108,6 +146,10 @@ public final class PicaConfiguration {
         private Proxy proxy;
         private Duration timeout = Duration.ofSeconds(30);
         private int retryTimes = 5;
+        private long domainProbeIntervalMs = 10 * 60 * 1000L;
+        private long domainProbeTimeoutMs = 3 * 1000L;
+        private Duration imageTimeout = Duration.ofSeconds(60);
+        private long closeTimeoutMs = 60 * 1000L;
         private ExecutorService executor;
         private int downloadThreadPoolSize = 12;
         private int cacheSize = 100 * 1024 * 1024;
@@ -132,6 +174,26 @@ public final class PicaConfiguration {
 
         public Builder retryTimes(int retryTimes) {
             this.retryTimes = validateNonNegative(retryTimes, "Retry times");
+            return this;
+        }
+
+        public Builder domainProbeIntervalMs(long intervalMs) {
+            this.domainProbeIntervalMs = validateNonNegative(intervalMs, "Domain probe interval");
+            return this;
+        }
+
+        public Builder domainProbeTimeoutMs(long timeoutMs) {
+            this.domainProbeTimeoutMs = validatePositiveLong(timeoutMs, "Domain probe timeout");
+            return this;
+        }
+
+        public Builder imageTimeout(Duration imageTimeout) {
+            this.imageTimeout = validateTimeout(imageTimeout);
+            return this;
+        }
+
+        public Builder closeTimeoutMs(long timeoutMs) {
+            this.closeTimeoutMs = validateNonNegative(timeoutMs, "Close timeout");
             return this;
         }
 
@@ -174,6 +236,18 @@ public final class PicaConfiguration {
             }
             if (props.containsKey("retry.times")) {
                 retryTimes(Integer.parseInt(props.getProperty("retry.times")));
+            }
+            if (props.containsKey("domain.probe.interval.ms")) {
+                domainProbeIntervalMs(Long.parseLong(props.getProperty("domain.probe.interval.ms")));
+            }
+            if (props.containsKey("domain.probe.timeout.ms")) {
+                domainProbeTimeoutMs(Long.parseLong(props.getProperty("domain.probe.timeout.ms")));
+            }
+            if (props.containsKey("image.timeout.seconds")) {
+                imageTimeout(Duration.ofSeconds(Long.parseLong(props.getProperty("image.timeout.seconds"))));
+            }
+            if (props.containsKey("close.timeout.ms")) {
+                closeTimeoutMs(Long.parseLong(props.getProperty("close.timeout.ms")));
             }
             if (props.containsKey("download.thread.pool.size")) {
                 downloadThreadPoolSize(Integer.parseInt(props.getProperty("download.thread.pool.size")));
@@ -295,7 +369,21 @@ public final class PicaConfiguration {
         return value;
     }
 
+    private static long validateNonNegative(long value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must be non-negative");
+        }
+        return value;
+    }
+
     private static int validatePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+        return value;
+    }
+
+    private static long validatePositiveLong(long value, String name) {
         if (value <= 0) {
             throw new IllegalArgumentException(name + " must be positive");
         }

@@ -14,6 +14,7 @@ import javax.net.ssl.X509TrustManager;
 import javax.net.SocketFactory;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -79,17 +80,19 @@ final class OkHttpBuilder {
                 .cookieJar(apiCookieJar)
                 .addInterceptor(new RetryAndDomainRedirectInterceptor(config.getRetryTimes(), domainManager))
                 .retryOnConnectionFailure(false)
-                .followRedirects(false)
-                .followSslRedirects(false);
+                .followRedirects(true)
+                .followSslRedirects(true);
         OkHttpClient apiClient = apiBuilder.build();
 
         OkHttpClient.Builder imageBuilder = baseBuilder(config, dns, sslSocketFactory, trustManager, socketFactory)
                 .dispatcher(new Dispatcher())
                 .connectionPool(new ConnectionPool())
                 .cookieJar(CookieJar.NO_COOKIES)
-                .retryOnConnectionFailure(false)
-                .followRedirects(false)
-                .followSslRedirects(false);
+                .readTimeout(config.getImageTimeout())
+                .callTimeout(Duration.ZERO)
+                .retryOnConnectionFailure(true)
+                .followRedirects(true)
+                .followSslRedirects(true);
         OkHttpClient imageClient = imageBuilder.build();
 
         return new HttpClientContext(apiClient, imageClient, domainManager, cookieManager);

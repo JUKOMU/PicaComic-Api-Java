@@ -6,14 +6,19 @@ import io.github.jukomu.picacomic.api.model.PicaImage;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.SocketPolicy;
+import okio.Buffer;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,174 +29,121 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ImageBoundaryTest {
 
     @Test
-    void imageRequestIsBlankGetAndDoesNotInheritApiCredentials() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture()) {
-            fixture.server.enqueue(new MockResponse()
-                    .setResponseCode(200)
-                    .setHeader("Content-Type", "application/json")
-                    .setHeader("Set-Cookie", "session=secret-cookie; Path=/")
-                    .setBody("{\"data\":{\"token\":\"secret-token\"}}"));
-            fixture.server.enqueue(new MockResponse()
-                    .setResponseCode(200)
-                    .setHeader("Content-Type", "image/png")
-                    .setBody("png-fixture"));
-            try (IPicaClient client = client(fixture)) {
-                client.login("fixture-user", "fixture-password");
-                byte[] bytes = client.fetchImageBytes(image(fixture, "s2.picacomic.com", "one.png"));
-                assertEquals("png-fixture", new String(bytes));
-            }
-            assertEquals(2, fixture.server.getRequestCount());
-            var apiRequest = fixture.server.takeRequest();
-            var imageRequest = fixture.server.takeRequest();
-            assertEquals("POST", apiRequest.getMethod());
-            assertEquals("GET", imageRequest.getMethod());
-            assertEquals(0, imageRequest.getBodySize());
-            assertEquals("identity", imageRequest.getHeader("Accept-Encoding"));
-            assertFalse(hasAnyHeader(imageRequest, "Cookie", "authorization", "signature", "nonce",
-                    "time", "app-channel", "app-uuid", "app-version", "app-platform",
-                    "Content-Type", "Origin", "Referer"));
+    void imageRequestIsAGetWithoutApiCredentialsOrBody() throws Exception {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
+            fixture.server.enqueue(new MockResponse().setResponseCode(200).setBody("image"));
+            assertEquals("image", new String(client.fetchImageBytes(
+                    image(fixture, "image-one.test", "one.png"))));
+            var request = fixture.server.takeRequest(3, TimeUnit.SECONDS);
+            assertNotNull(request);
+            assertEquals("GET", request.getMethod());
+            assertEquals(0, request.getBodySize());
+            assertFalse(hasAnyHeader(request, "Cookie", "authorization", "signature", "nonce", "time",
+                    "app-channel", "app-uuid", "app-version", "app-platform", "Content-Type",
+                    "Origin", "Referer"));
         }
     }
 
     @Test
-    void unknownSourcesAreRejectedBeforeNetwork() throws Exception {
+    void arbitraryHttpsSourcesAndFieldLocatorsAreAcceptedButIncompleteLocatorsFail() throws Exception {
         try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
-            assertReason(client, new PicaImage("x", "x", "https://unknown.test", null),
-                    ImageFetchException.Reason.DISALLOWED_HOST);
-            assertReason(client, new PicaImage("x", "x", "http://s2.picacomic.com", null),
-                    ImageFetchException.Reason.DISALLOWED_HOST);
-            assertReason(client, new PicaImage("x", "x", "https://s2.picacomic.com:8443", null),
-                    ImageFetchException.Reason.DISALLOWED_HOST);
-            assertReason(client, new PicaImage("x", "x", "https://user@s2.picacomic.com", null),
-                    ImageFetchException.Reason.DISALLOWED_HOST);
-            assertReason(client, new PicaImage("x", "../x", "https://s2.picacomic.com", null),
-                    ImageFetchException.Reason.INVALID_SOURCE);
-            assertReason(client, new PicaImage("x", null, null, null),
-                    ImageFetchException.Reason.INVALID_SOURCE);
-            assertEquals(0, fixture.server.getRequestCount());
-        }
-    }
-
-    @Test
-    void onlyHttp200RasterIdentityResponsesSucceed() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
-            fixture.server.enqueue(new MockResponse().setResponseCode(206)
-                    .setHeader("Content-Type", "image/png").setBody("partial"));
-            assertReason(client, image(fixture, "s2.picacomic.com", "partial.png"),
-                    ImageFetchException.Reason.HTTP_STATUS);
-
-            fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "text/html").setBody("html"));
-            assertReason(client, image(fixture, "s2.picacomic.com", "html.png"),
-                    ImageFetchException.Reason.UNSUPPORTED_MEDIA_TYPE);
-
-            fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/png")
-                    .setHeader("Content-Encoding", "gzip").setBody("compressed"));
-            assertReason(client, image(fixture, "s2.picacomic.com", "gzip.png"),
-                    ImageFetchException.Reason.UNSUPPORTED_CONTENT_ENCODING);
-        }
-    }
-
-    @Test
-    void fileServerAndPathAreCombinedThroughTheSamePolicy() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
-            fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/gif").setBody("gif"));
+            fixture.server.enqueue(new MockResponse().setResponseCode(200).setBody("direct"));
+            fixture.server.enqueue(new MockResponse().setResponseCode(200).setBody("fields"));
+            assertEquals("direct", new String(client.fetchImageBytes(
+                    image(fixture, "unknown.test", "outside-static/path.png"))));
             PicaImage fromFields = new PicaImage("field.gif", "folder/field.gif",
-                    "https://s2.picacomic.com/", null);
-            assertEquals("gif", new String(client.fetchImageBytes(fromFields)));
-            assertEquals(1, fixture.server.getRequestCount());
+                    "https://unknown.test/", null);
+            assertEquals("fields", new String(client.fetchImageBytes(fromFields)));
+            assertThrows(ImageFetchException.class,
+                    () -> client.fetchImageBytes(new PicaImage("missing", null, null, null)));
+            assertEquals(2, fixture.server.getRequestCount());
         }
     }
 
     @Test
-    void smallFixedAndChunkedBodiesAreReadToEof() throws Exception {
+    void successful2xxResponsesMissingMimeAndUsingGzipAreAccepted() throws Exception {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
+            fixture.server.enqueue(new MockResponse().setResponseCode(206).setBody("partial"));
+            fixture.server.enqueue(new MockResponse().setResponseCode(201)
+                    .setHeader("Content-Type", "text/html").setBody("ordinary"));
+            fixture.server.enqueue(new MockResponse().setResponseCode(200)
+                    .setHeader("Content-Encoding", "gzip")
+                    .setBody(new Buffer().write(gzip("compressed"))));
+            assertEquals("partial", new String(client.fetchImageBytes(
+                    image(fixture, "image-one.test", "partial"))));
+            assertEquals("ordinary", new String(client.fetchImageBytes(
+                    image(fixture, "image-one.test", "ordinary"))));
+            assertEquals("compressed", new String(client.fetchImageBytes(
+                    image(fixture, "image-one.test", "compressed"))));
+        }
+    }
+
+    @Test
+    void fixedAndUnknownLengthBodiesAreReadThroughEof() throws Exception {
         try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/png")
                     .setHeader("Content-Length", "5").setBody("12345"));
-            assertEquals("12345", new String(client.fetchImageBytes(
-                    image(fixture, "s2.picacomic.com", "known.png"))));
-
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/png")
                     .setChunkedBody("12345", 2));
             assertEquals("12345", new String(client.fetchImageBytes(
-                    image(fixture, "s2.picacomic.com", "chunked.png"))));
+                    image(fixture, "image-one.test", "known"))));
+            assertEquals("12345", new String(client.fetchImageBytes(
+                    image(fixture, "image-one.test", "chunked"))));
             assertEquals(2, fixture.server.getRequestCount());
         }
     }
 
     @Test
-    void fixedLengthEarlyEofIsStableAndDoesNotReturnPartialBytes() throws Exception {
+    void fixedLengthEarlyEofIsReportedWithoutReturningPartialBytes() throws Exception {
         try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/png")
                     .setBody("abc").setHeader("Content-Length", "4")
                     .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
-            assertReason(client, image(fixture, "s2.picacomic.com", "truncated.png"),
-                    ImageFetchException.Reason.TRUNCATED_BODY);
+            ImageFetchException exception = assertThrows(ImageFetchException.class,
+                    () -> client.fetchImageBytes(image(fixture, "image-one.test", "truncated")));
+            assertEquals(ImageFetchException.Reason.TRUNCATED_BODY, exception.getReason());
         }
     }
 
     @Test
-    void redirectsAreManualFreshBlankRequestsAndUnknownTargetsAreRejected() throws Exception {
+    void redirectsUseOkHttpDefaultBehaviorEvenWhenTheTargetHostChanges() throws Exception {
         try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(302)
-                    .setHeader("Location", "/static/second.png"));
-            fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/jpeg").setBody("redirected"));
-            assertEquals("redirected", new String(client.fetchImageBytes(
-                    image(fixture, "s2.picacomic.com", "first.png"))));
-            assertEquals(2, fixture.server.getRequestCount());
-            var first = fixture.server.takeRequest();
-            var second = fixture.server.takeRequest();
-            assertEquals("GET", first.getMethod());
-            assertEquals("GET", second.getMethod());
-            assertFalse(hasAnyHeader(second, "Cookie", "authorization", "signature", "Origin", "Referer"));
-
-            fixture.server.enqueue(new MockResponse().setResponseCode(302)
-                    .setHeader("Location", fixture.url("unknown.test", "/static/nope.png")));
-            assertReason(client, image(fixture, "s2.picacomic.com", "unknown-redirect.png"),
-                    ImageFetchException.Reason.REDIRECT_REJECTED);
-            assertEquals(3, fixture.server.getRequestCount());
-        }
-    }
-
-    @Test
-    void crossAllowlistedHostRedirectIsRevalidated() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
+                    .setHeader("Location", "/redirected"));
+            fixture.server.enqueue(new MockResponse().setResponseCode(200).setBody("relative"));
             fixture.server.enqueue(new MockResponse().setResponseCode(307)
-                    .setHeader("Location", fixture.url("s3.picacomic.com", "/static/second.webp")));
-            fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/webp").setBody("webp"));
-            assertEquals("webp", new String(client.fetchImageBytes(
-                    image(fixture, "s2.picacomic.com", "first.webp"))));
-            assertEquals(2, fixture.server.getRequestCount());
-            assertEquals("s2.picacomic.com", recordedHost(fixture.server.takeRequest()));
-            assertEquals("s3.picacomic.com", recordedHost(fixture.server.takeRequest()));
+                    .setHeader("Location", fixture.url("unknown.test", "/outside")));
+            fixture.server.enqueue(new MockResponse().setResponseCode(200).setBody("cross-host"));
+
+            assertEquals("relative", new String(client.fetchImageBytes(
+                    image(fixture, "image-one.test", "first"))));
+            assertEquals("cross-host", new String(client.fetchImageBytes(
+                    image(fixture, "image-one.test", "second"))));
+            assertEquals(4, fixture.server.getRequestCount());
+            assertEquals("image-one.test", recordedHost(fixture.server.takeRequest()));
+            assertEquals("image-one.test", recordedHost(fixture.server.takeRequest()));
+            assertEquals("image-one.test", recordedHost(fixture.server.takeRequest()));
+            assertEquals("unknown.test", recordedHost(fixture.server.takeRequest()));
         }
     }
 
     @Test
-    void cancellationAndTimeoutUseStableReasons() throws Exception {
+    void cancellationDoesNotRetryAndImageReadTimeoutIsIndependent() throws Exception {
         try (LocalTlsFixture fixture = new LocalTlsFixture()) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/png")
                     .setBody("0123456789").throttleBody(1, 1, TimeUnit.SECONDS));
-            try (IPicaClient client = client(fixture)) {
-                var request = client.newImageRequest(image(fixture, "s2.picacomic.com", "slow.png"));
+            try (IPicaClient client = client(fixture, Duration.ofSeconds(3))) {
+                var request = client.newImageRequest(image(fixture, "image-one.test", "slow"));
                 ExecutorService caller = Executors.newSingleThreadExecutor();
                 try {
                     Future<byte[]> future = caller.submit(request::execute);
                     assertNotNull(fixture.server.takeRequest(3, TimeUnit.SECONDS));
                     request.cancel();
-                    var execution = assertThrows(java.util.concurrent.ExecutionException.class,
+                    ExecutionException execution = assertThrows(ExecutionException.class,
                             () -> future.get(3, TimeUnit.SECONDS));
-                    ImageFetchException exception = (ImageFetchException) execution.getCause();
-                    assertEquals(ImageFetchException.Reason.CANCELLED, exception.getReason());
-                    assertTrue(request.isCancelled());
+                    assertEquals(ImageFetchException.Reason.CANCELLED,
+                            ((ImageFetchException) execution.getCause()).getReason());
+                    assertEquals(1, fixture.server.getRequestCount());
                 } finally {
                     request.close();
                     caller.shutdownNow();
@@ -202,19 +154,17 @@ class ImageBoundaryTest {
         try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture,
                 Duration.ofMillis(100))) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeadersDelay(1, TimeUnit.SECONDS)
-                    .setHeader("Content-Type", "image/png").setBody("late"));
+                    .setHeadersDelay(1, TimeUnit.SECONDS).setBody("late"));
             ImageFetchException exception = assertThrows(ImageFetchException.class,
-                    () -> client.fetchImageBytes(image(fixture, "s2.picacomic.com", "timeout.png")));
+                    () -> client.fetchImageBytes(image(fixture, "image-one.test", "timeout")));
             assertEquals(ImageFetchException.Reason.TIMEOUT, exception.getReason());
         }
     }
 
     @Test
-    void clientCloseCancelsInFlightImageAndLeavesExternalExecutorOwnedByCaller() throws Exception {
+    void clientCloseCancelsImageAndDoesNotOwnExternalExecutor() throws Exception {
         try (LocalTlsFixture fixture = new LocalTlsFixture()) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
-                    .setHeader("Content-Type", "image/png")
                     .setBody("0123456789").throttleBody(1, 1, TimeUnit.SECONDS));
             ExecutorService external = Executors.newSingleThreadExecutor();
             PicaConfiguration config = new PicaConfiguration.Builder()
@@ -226,17 +176,16 @@ class ImageBoundaryTest {
                     LocalTlsClientContextFactory.build(config, fixture.dns,
                             fixture.clientCertificates.sslSocketFactory(),
                             fixture.clientCertificates.trustManager(), fixture.socketFactory));
-            var request = client.newImageRequest(image(fixture, "s2.picacomic.com", "close.png"));
+            var request = client.newImageRequest(image(fixture, "image-one.test", "close"));
             Future<byte[]> future = external.submit(request::execute);
             assertNotNull(fixture.server.takeRequest(3, TimeUnit.SECONDS));
             client.close();
-            var execution = assertThrows(java.util.concurrent.ExecutionException.class,
+            ExecutionException execution = assertThrows(ExecutionException.class,
                     () -> future.get(3, TimeUnit.SECONDS));
             assertEquals(ImageFetchException.Reason.CLIENT_CLOSED,
                     ((ImageFetchException) execution.getCause()).getReason());
             assertTrue(request.isCancelled());
             assertFalse(external.isShutdown());
-            client.close();
             external.shutdownNow();
         }
     }
@@ -245,29 +194,28 @@ class ImageBoundaryTest {
         return client(fixture, Duration.ofSeconds(3));
     }
 
-    private static IPicaClient client(LocalTlsFixture fixture, Duration timeout) {
+    private static IPicaClient client(LocalTlsFixture fixture, Duration imageTimeout) {
         PicaConfiguration config = new PicaConfiguration.Builder()
                 .domains(List.of("api-one.test", "api-two.test"))
-                .timeout(timeout)
+                .timeout(Duration.ofSeconds(3))
+                .imageTimeout(imageTimeout)
                 .retryTimes(1)
                 .build();
         return new DefaultPicaClient(config, LocalTlsClientContextFactory.build(config, fixture.dns,
-                fixture.clientCertificates.sslSocketFactory(),
-                fixture.clientCertificates.trustManager(), fixture.socketFactory));
+                fixture.clientCertificates.sslSocketFactory(), fixture.clientCertificates.trustManager(),
+                fixture.socketFactory));
     }
 
     private static PicaImage image(LocalTlsFixture fixture, String host, String name) {
         return new PicaImage(name, "", "", fixture.url(host, "/static/" + name));
     }
 
-    private static void assertReason(IPicaClient client, PicaImage image,
-                                     ImageFetchException.Reason reason) {
-        ImageFetchException exception = assertThrows(ImageFetchException.class,
-                () -> client.fetchImageBytes(image));
-        assertEquals(reason, exception.getReason());
-        if (reason != ImageFetchException.Reason.HTTP_STATUS) {
-            assertEquals(null, exception.getHttpStatus());
+    private static byte[] gzip(String value) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzip = new GZIPOutputStream(output)) {
+            gzip.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
+        return output.toByteArray();
     }
 
     private static boolean hasAnyHeader(okhttp3.mockwebserver.RecordedRequest request, String... names) {

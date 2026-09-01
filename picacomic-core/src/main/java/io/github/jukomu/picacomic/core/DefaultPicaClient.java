@@ -32,6 +32,7 @@ import io.github.jukomu.picacomic.core.strategy.impl.DefaultPhotoPathGenerator;
 import io.github.jukomu.picacomic.core.util.FileUtils;
 import io.github.jukomu.picacomic.core.util.JsonUtils;
 import okhttp3.Call;
+import okhttp3.CookieJar;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -45,6 +46,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -60,6 +63,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -97,6 +101,7 @@ final class DefaultPicaClient implements IPicaClient {
     private final PicaConfiguration config;
     private final OkHttpClient apiClient;
     private final OkHttpClient imageClient;
+    private final OkHttpClient domainProbeClient;
     private final PicaDomainManager domainManager;
     private final java.net.CookieManager cookieManager;
     private final ExecutorService downloadExecutor;
@@ -133,6 +138,7 @@ final class DefaultPicaClient implements IPicaClient {
         this.imageFileMover = Objects.requireNonNull(imageFileMover, "Image file mover cannot be null");
         this.apiClient = Objects.requireNonNull(context.getApiClient(), "API client cannot be null");
         this.imageClient = Objects.requireNonNull(context.getImageClient(), "Image client cannot be null");
+        this.domainProbeClient = createDomainProbeClient(this.apiClient, config.getDomainProbeTimeoutMs());
         this.domainManager = Objects.requireNonNull(context.getDomainManager(), "Domain manager cannot be null");
         this.cookieManager = Objects.requireNonNull(context.getCookieManager(), "Cookie manager cannot be null");
 
@@ -147,8 +153,10 @@ final class DefaultPicaClient implements IPicaClient {
         this.concurrentPhotoDownloads = config.getConcurrentPhotoDownloads();
         this.concurrentImageDownloads = config.getConcurrentImageDownloads();
         this.imageQuality = config.getImageQuality();
-        this.imageLocatorResolver = new ImageLocatorResolver(new ImageHostPolicy());
+        this.imageLocatorResolver = new ImageLocatorResolver();
         this.readerSlots = new Semaphore(concurrentImageDownloads, true);
+        this.domainManager.setProbe(this::probeDomain);
+        this.domainManager.startPeriodicProbe(config.getDomainProbeIntervalMs());
     }
 
     // == 核心数据获取层 ==
@@ -416,7 +424,6 @@ final class DefaultPicaClient implements IPicaClient {
                 imageClient,
                 imageLocatorResolver,
                 readerSlots,
-                config.getTimeout(),
                 closed::get,
                 this::registerImageCall,
                 this::unregisterImageCall,
@@ -461,12 +468,24 @@ final class DefaultPicaClient implements IPicaClient {
         Path temporary = null;
         try (PicaImageRequest request = newImageRequest(image)) {
             byte[] imageBytes = request.execute();
+            ensureDownloadOpen();
             temporary = FileUtils.createAtomicTemp(target);
             imageFileWriter.write(temporary, imageBytes);
-            imageFileMover.move(temporary, target);
+            ensureDownloadOpen();
+            try {
+                imageFileMover.move(temporary, target);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
             temporary = null;
         } finally {
             FileUtils.deleteQuietly(temporary);
+        }
+    }
+
+    private void ensureDownloadOpen() {
+        if (closed.get()) {
+            throw new ImageFetchException(ImageFetchException.Reason.CLIENT_CLOSED);
         }
     }
 
@@ -773,6 +792,46 @@ final class DefaultPicaClient implements IPicaClient {
                 .host(PicaConstants.PLACEHOLDER_HOST);
     }
 
+    void reprobeDomains() {
+        if (!closed.get()) {
+            domainManager.probeAllDomains(this::probeDomain);
+        }
+    }
+
+    private boolean probeDomain(String domain) {
+        if (closed.get()) {
+            return false;
+        }
+        HttpUrl url = new HttpUrl.Builder()
+                .scheme("https")
+                .host(domain)
+                .build();
+        Call call = domainProbeClient.newCall(new Request.Builder().url(url).head().build());
+        registerApiCall(call);
+        try (Response response = call.execute()) {
+            return response.code() < 500;
+        } catch (IOException exception) {
+            return false;
+        } finally {
+            apiCalls.remove(call);
+        }
+    }
+
+    private static OkHttpClient createDomainProbeClient(OkHttpClient apiClient, long timeoutMs) {
+        OkHttpClient.Builder builder = apiClient.newBuilder();
+        builder.interceptors().clear();
+        builder.networkInterceptors().clear();
+        builder.cookieJar(CookieJar.NO_COOKIES)
+                .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .writeTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .retryOnConnectionFailure(false)
+                .followRedirects(false)
+                .followSslRedirects(false);
+        return builder.build();
+    }
+
     /**
      * 构建 Pica API 使用的签名与 application headers。
      */
@@ -856,16 +915,26 @@ final class DefaultPicaClient implements IPicaClient {
         }
         apiClient.dispatcher().cancelAll();
         imageClient.dispatcher().cancelAll();
+        domainManager.shutdown();
 
         token = null;
         loggedInUserName = null;
         cookieManager.getCookieStore().removeAll();
         cachePool.clear();
+        if (ownsDownloadExecutor) {
+            downloadExecutor.shutdown();
+            try {
+                if (!downloadExecutor.awaitTermination(config.getCloseTimeoutMs(), TimeUnit.MILLISECONDS)) {
+                    downloadExecutor.shutdownNow();
+                }
+            } catch (InterruptedException exception) {
+                downloadExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        closeHttpClient(domainProbeClient);
         closeHttpClient(apiClient);
         closeHttpClient(imageClient);
-        if (ownsDownloadExecutor) {
-            downloadExecutor.shutdownNow();
-        }
     }
 
     private static void closeHttpClient(OkHttpClient client) {

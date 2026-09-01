@@ -146,7 +146,7 @@ class BatchAtomicDownloadTest {
     }
 
     @Test
-    void unsupportedAtomicMoveCleansPartFileWithoutNonAtomicFallback() throws Exception {
+    void unsupportedAtomicMoveFallsBackToReplaceExistingAndCleansPartFile() throws Exception {
         try (LocalTlsFixture fixture = new LocalTlsFixture()) {
             fixture.server.enqueue(imageResponse("move-failure"));
             Path directory = tempDir.resolve("move-failure");
@@ -158,15 +158,12 @@ class BatchAtomicDownloadTest {
             });
             try {
                 DownloadResult result = client.downloadPhoto(singleImagePhoto(fixture, "move.png"), directory);
-                assertTrue(result.getSuccessfulFiles().isEmpty());
-                assertEquals(1, result.getFailedTasks().size());
-                assertTrue(result.getFailedTasks().values().stream()
-                        .allMatch(exception -> exception instanceof AtomicMoveNotSupportedException));
+                assertTrue(result.isAllSuccess(), result.getFailedTasks().toString());
+                assertEquals("move-failure", Files.readString(directory.resolve("move.png")));
             } finally {
                 client.close();
             }
-            assertFalse(Files.exists(directory.resolve("move.png")),
-                    "atomic move failure must not fall back to replace");
+            assertTrue(Files.exists(directory.resolve("move.png")));
             assertNoPartFiles(directory);
         }
     }

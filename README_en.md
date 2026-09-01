@@ -24,7 +24,7 @@
 
 | Additional Features | Implementation Status |
 |:---------------------------|:---------------------------------|
-| **API/image network boundary** | ✅ Separate OkHttp clients and fixed host policy |
+| **API/image network boundary** | ✅ Separate OkHttp clients with API host probing and retries |
 | **Image concurrency boundary** | ✅ Per-client fair semaphore driven by configuration |
 | **Atomic image landing** | ✅ Same-directory temporary file + `ATOMIC_MOVE` |
 
@@ -85,13 +85,13 @@ This module contains the specific implementation logic for all features, handlin
     * **Session Management**: Manages user login states and Token credential maintenance.
 * **Network Processing**:
     * **API/image separation**: Each `IPicaClient` owns two OkHttp clients. The image client has no Cookie, token, signature, or API interceptor.
-    * **Safe retries**: Only idempotent API `GET`/`HEAD` requests retry a bounded set of `502/503/504` and I/O failures. POST is never replayed and API redirects are not followed automatically.
-    * **Image sources**: Images are restricted to six exact HTTPS hosts under `/static/`: `img.picacomic.com`, `s2.picacomic.com`, `s3.picacomic.com`, `storage.picacomic.com`, `storage1.picacomic.com`, and `storage-b.picacomic.com`. The library never learns new hosts from API responses, redirects, or runtime configuration.
+    * **Safe retries**: API requests select the best host from the configured pool and retry, within `retryTimes`, on I/O, `403`, or any `5xx` response. GET and POST use the same rules. API requests use OkHttp's default redirect behavior.
+    * **Image sources**: Image URLs come from the model or caller and are parsed by OkHttp. The image client carries no API credentials, follows default redirects, and accepts successful `2xx` bodies and standard gzip.
 * **Concurrent Downloading**:
     * Provides advanced methods like `downloadAlbum` and `downloadPhoto`; only leaf image work is submitted to the caller-provided or client-owned `ExecutorService`.
     * Batch download operations return a `DownloadResult` object, which contains detailed reports of successful and failed tasks.
-    * `PicaImageRequest.execute/cancel/close` keeps single-image access blocking while allowing page-level cancellation. Image reads have no library-level byte or aggregate-memory cap; image concurrency defaults to 20 and accepts positive configuration values.
-    * Files are written completely to a same-directory `.part` file before `ATOMIC_MOVE`; unsupported atomic moves fail instead of falling back to a visible partial file.
+    * `PicaImageRequest.execute/cancel/close` keeps single-image access blocking while allowing page-level cancellation. Image concurrency defaults to 20 and accepts positive configuration values.
+    * Files are written completely to a same-directory `.part` file before `ATOMIC_MOVE`; filesystems without atomic move use `REPLACE_EXISTING`, and failures or cancellation clean up the temporary file.
 
 ---
 
@@ -208,6 +208,7 @@ PicaConfiguration config = new PicaConfiguration.Builder()
         .proxy("127.0.0.1", 7890) // Optional caller-provided HTTP proxy
         .timeout(Duration.ofSeconds(60)) // Set network timeout to 60 seconds
         .retryTimes(5) // Set maximum retry times
+        .imageTimeout(Duration.ofSeconds(60)) // Image read timeout
         .downloadThreadPoolSize(12) // Set internal download thread pool size
         .concurrentPhotoDownloads(3) // Set the number of concurrent chapter downloads
         .concurrentImageDownloads(20) // Number of concurrent image readers (must be positive)
@@ -215,13 +216,15 @@ PicaConfiguration config = new PicaConfiguration.Builder()
         .build();
 ```
 
-`downloadThreadPoolSize` defaults to 12, `concurrentPhotoDownloads` defaults to 3, and `concurrentImageDownloads` defaults to 20. All three values must be positive and have no library-level hard upper bound. With `loadFromProperties`, use `download.thread.pool.size`, `concurrent.photo.downloads`, and `concurrent.image.downloads` respectively.
+`downloadThreadPoolSize` defaults to 12, `concurrentPhotoDownloads` defaults to 3, and `concurrentImageDownloads` defaults to 20. All three values must be positive and have no library-level hard upper bound. `imageTimeout` defaults to 60 seconds and applies only to image reads. With `loadFromProperties`, use `download.thread.pool.size`, `concurrent.photo.downloads`, `concurrent.image.downloads`, and `image.timeout.seconds` respectively.
 
-The proxy applies only to clients created from this configuration and may observe network metadata. The library never enables or switches to a proxy after a failure. Image requests are fresh HTTPS `GET` requests, manually validate at most three redirects, and never inherit API cookies, tokens, signatures, or request bodies.
+The default API host pool contains `picacomic.com`, `picaapi.go2778.com`, `picaapi.acbbb.com`, and `picaapi.picacomic.com`. A `domains(...)` value replaces that pool and is probed before the first API request. Configured hosts are treated as equivalent mirrors; the library does not discover new hosts from network responses.
+
+The proxy applies only to clients created from this configuration and may observe network metadata. The library never enables or switches to a proxy after a failure. API hosts are probed with HEAD before the first API request and periodically thereafter. Image requests are synchronous blank `GET` requests and never inherit API cookies, tokens, signatures, or request bodies; `closeTimeoutMs` controls how long client close waits for its own download tasks.
 
 `fetchImageBytes` is blocking. For cancellation, create `PicaImageRequest request = client.newImageRequest(image)`, call `request.execute()` from an executor owned by your application, and call `request.cancel()`/`request.close()` when the page is destroyed. The returned `byte[]` belongs to the caller after the convenience method returns; the library cannot limit how long the caller retains it.
 
-Image failures are reported as `ImageFetchException`; use `getReason()` for stable values such as `INVALID_SOURCE`, `DISALLOWED_HOST`, `REDIRECT_REJECTED`, `UNSUPPORTED_MEDIA_TYPE`, `TIMEOUT`, `CANCELLED`, and `CLIENT_CLOSED`. Returned image bytes belong to the caller; the library does not provide resource-exhaustion protection. Credentials in the examples are placeholders only; tests use local TLS fixtures and never access the real service.
+Image failures are reported as `ImageFetchException`; use `getReason()` for stable values such as `INVALID_SOURCE`, `HTTP_STATUS`, `INVALID_CONTENT`, `TRUNCATED_BODY`, `TIMEOUT`, `CANCELLED`, and `CLIENT_CLOSED`. Credentials in the examples are placeholders only; tests use local TLS fixtures and never access the real service.
 
 ### Custom File Storage Path
 
