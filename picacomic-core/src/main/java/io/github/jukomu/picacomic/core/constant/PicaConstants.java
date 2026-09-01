@@ -45,7 +45,7 @@ public final class PicaConstants {
     );
 
     /**
-     * U1 任务所有者批准的精确图片 host 集合。
+     * 精确图片 host 集合。
      *
      * <p>这是固定策略输入，不从 API response、redirect 或图片 locator 动态扩张。</p>
      */

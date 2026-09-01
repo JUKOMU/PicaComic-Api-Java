@@ -747,8 +747,7 @@ final class DefaultPicaClient implements IPicaClient {
         Call call = apiClient.newCall(request);
         registerApiCall(call);
         try (Response response = call.execute()) {
-            // PicaResponse 首次读取发生在 live response 仍被 try-with-resources 持有期间，
-            // 后续 parser 只使用已缓存的 detached bytes。
+            // PicaResponse 在 response 关闭前完成首次读取；返回对象只依赖其缓存的 detached bytes。
             PicaResponse picaResponse = new PicaResponse(response);
             picaResponse.requireSuccess();
             return picaResponse;

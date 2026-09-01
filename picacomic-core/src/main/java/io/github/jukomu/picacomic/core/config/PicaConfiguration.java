@@ -165,9 +165,6 @@ public final class PicaConfiguration {
             return this;
         }
 
-        /**
-         * 从 properties 读取仍属于 U1 的基础网络配置。
-         */
         public Builder loadFromProperties(InputStream inputStream) throws IOException {
             Properties props = new Properties();
             props.load(Objects.requireNonNull(inputStream, "Input stream cannot be null"));
@@ -191,7 +188,6 @@ public final class PicaConfiguration {
         }
 
         public PicaConfiguration build() {
-            // external executor 的 pool-size value 仍是 snapshot 的普通配置，不改写为哨兵值。
             return new PicaConfiguration(this);
         }
     }
