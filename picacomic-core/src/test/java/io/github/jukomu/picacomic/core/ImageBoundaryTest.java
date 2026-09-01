@@ -51,9 +51,16 @@ class ImageBoundaryTest {
             fixture.server.enqueue(new MockResponse().setResponseCode(200).setBody("fields"));
             assertEquals("direct", new String(client.fetchImageBytes(
                     image(fixture, "unknown.test", "outside-static/path.png"))));
+            var directRequest = fixture.server.takeRequest(3, TimeUnit.SECONDS);
+            assertNotNull(directRequest);
+            assertEquals("/static/outside-static/path.png",
+                    directRequest.getRequestUrl().encodedPath());
             PicaImage fromFields = new PicaImage("field.gif", "folder/field.gif",
                     "https://unknown.test/", null);
             assertEquals("fields", new String(client.fetchImageBytes(fromFields)));
+            var fieldRequest = fixture.server.takeRequest(3, TimeUnit.SECONDS);
+            assertNotNull(fieldRequest);
+            assertEquals("/static/folder/field.gif", fieldRequest.getRequestUrl().encodedPath());
             assertThrows(ImageFetchException.class,
                     () -> client.fetchImageBytes(new PicaImage("missing", null, null, null)));
             assertEquals(2, fixture.server.getRequestCount());

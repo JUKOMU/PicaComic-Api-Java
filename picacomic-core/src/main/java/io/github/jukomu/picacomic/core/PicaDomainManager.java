@@ -152,6 +152,8 @@ final class PicaDomainManager {
                     synchronized (lifecycleLock) {
                         if (completed) {
                             initialized = true;
+                        } else if (initialization == latch) {
+                            initialization = new CountDownLatch(1);
                         }
                         probeRunning.set(false);
                         latch.countDown();

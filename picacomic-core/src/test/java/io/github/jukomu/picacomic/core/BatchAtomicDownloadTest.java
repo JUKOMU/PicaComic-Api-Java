@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -23,6 +24,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -114,6 +117,62 @@ class BatchAtomicDownloadTest {
                         "queued leaf must not start after client close");
                 assertNoPartFiles(directory);
             } finally {
+                client.close();
+                coordinatorExecutor.shutdownNow();
+                leafExecutor.shutdownNow();
+            }
+        }
+    }
+
+    @Test
+    void interruptedBatchRemovesCancelledFuturesAndAllowsLaterCompletion() throws Exception {
+        try (LocalTlsFixture fixture = new LocalTlsFixture()) {
+            fixture.server.enqueue(imageResponse("first"));
+            fixture.server.enqueue(imageResponse("completed"));
+            CountDownLatch writerStarted = new CountDownLatch(1);
+            CountDownLatch releaseWriter = new CountDownLatch(1);
+            AtomicBoolean blockWriter = new AtomicBoolean(true);
+            DefaultPicaClient.ImageFileWriter writer = (temporary, bytes) -> {
+                if (blockWriter.get()) {
+                    writerStarted.countDown();
+                    try {
+                        releaseWriter.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("fixture writer interrupted", exception);
+                    }
+                }
+                Files.write(temporary, bytes, StandardOpenOption.WRITE);
+            };
+            ExecutorService leafExecutor = Executors.newSingleThreadExecutor();
+            ExecutorService coordinatorExecutor = Executors.newSingleThreadExecutor();
+            DefaultPicaClient client = internalClient(fixture, writer, BatchAtomicDownloadTest::moveImageFile);
+            AtomicReference<Thread> coordinatorThread = new AtomicReference<>();
+            Path directory = tempDir.resolve("interrupted-batch");
+            PicaPhoto photo = new PicaPhoto("album", "photo", "chapter", "", 1,
+                    List.of(image(fixture, "first.png"), image(fixture, "queued.png")), false);
+            try {
+                Future<DownloadResult> batch = coordinatorExecutor.submit(() -> {
+                    coordinatorThread.set(Thread.currentThread());
+                    return client.downloadPhoto(photo, directory, leafExecutor);
+                });
+                assertTrue(writerStarted.await(5, TimeUnit.SECONDS));
+                awaitBatchFutureCount(client, 2);
+                coordinatorThread.get().interrupt();
+                DownloadResult interrupted = batch.get(5, TimeUnit.SECONDS);
+                assertTrue(interrupted.getSuccessfulFiles().isEmpty());
+                assertEquals(2, interrupted.getFailedTasks().size());
+                awaitBatchFutureCount(client, 0);
+
+                blockWriter.set(false);
+                DownloadResult completed = client.downloadPhoto(
+                        singleImagePhoto(fixture, "completed.png"),
+                        tempDir.resolve("completed-batch"), leafExecutor);
+                assertTrue(completed.isAllSuccess(), completed.getFailedTasks().toString());
+                awaitBatchFutureCount(client, 0);
+                assertFalse(leafExecutor.isShutdown());
+            } finally {
+                releaseWriter.countDown();
                 client.close();
                 coordinatorExecutor.shutdownNow();
                 leafExecutor.shutdownNow();
@@ -288,5 +347,17 @@ class BatchAtomicDownloadTest {
         try (var files = Files.walk(directory)) {
             assertTrue(files.noneMatch(path -> path.getFileName().toString().endsWith(".part")));
         }
+    }
+
+    private static void awaitBatchFutureCount(DefaultPicaClient client, int expected)
+            throws Exception {
+        Field field = DefaultPicaClient.class.getDeclaredField("batchFutures");
+        field.setAccessible(true);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline
+                && ((java.util.Set<?>) field.get(client)).size() != expected) {
+            Thread.sleep(10);
+        }
+        assertEquals(expected, ((java.util.Set<?>) field.get(client)).size());
     }
 }

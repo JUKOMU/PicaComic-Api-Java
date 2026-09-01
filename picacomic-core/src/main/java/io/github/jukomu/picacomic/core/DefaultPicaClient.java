@@ -645,7 +645,7 @@ final class DefaultPicaClient implements IPicaClient {
                 batch.tasks.add(new ImageTask(image, future));
                 batchFutures.add(future);
                 if (closed.get()) {
-                    future.cancel(true);
+                    cancelBatchFuture(future);
                 }
             } catch (RejectedExecutionException exception) {
                 batch.failed.put(image, exception);
@@ -678,7 +678,7 @@ final class DefaultPicaClient implements IPicaClient {
                 Thread.currentThread().interrupt();
                 batch.failed.putIfAbsent(task.image, exception);
                 for (ImageTask remaining : batch.tasks) {
-                    remaining.future.cancel(true);
+                    cancelBatchFuture(remaining.future);
                     batch.failed.putIfAbsent(remaining.image, closed.get()
                             ? new ImageFetchException(ImageFetchException.Reason.CLIENT_CLOSED)
                             : exception);
@@ -693,6 +693,11 @@ final class DefaultPicaClient implements IPicaClient {
             }
         }
         failed.putAll(batch.failed);
+    }
+
+    private void cancelBatchFuture(Future<?> future) {
+        future.cancel(true);
+        batchFutures.remove(future);
     }
 
     private static final class ImageTask {
@@ -913,7 +918,7 @@ final class DefaultPicaClient implements IPicaClient {
             call.cancel();
         }
         for (Future<?> future : batchFutures) {
-            future.cancel(true);
+            cancelBatchFuture(future);
         }
         apiClient.dispatcher().cancelAll();
         imageClient.dispatcher().cancelAll();
