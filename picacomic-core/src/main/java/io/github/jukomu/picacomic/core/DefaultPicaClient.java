@@ -839,8 +839,10 @@ final class DefaultPicaClient implements IPicaClient {
                                             String method,
                                             String authToken,
                                             String imageQuality) {
-        String path = url.encodedPath().substring(1);
-        String urlPath = url.query() == null ? path : path + "?" + url.query();
+        String pathPart = url.encodedPath().substring(1);
+        String urlPath = url.query() == null
+                ? pathPart
+                : pathPart + "?" + url.encodedQuery();
         String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
         String nonce = PicaCryptoTool.generateNonce();
         String signature = PicaCryptoTool.generateSignature(urlPath, timestamp, nonce, method);
