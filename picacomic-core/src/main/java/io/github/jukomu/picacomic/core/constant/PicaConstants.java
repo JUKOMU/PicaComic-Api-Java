@@ -38,8 +38,8 @@ public final class PicaConstants {
 
     // == 域名 ==
     public static final List<String> DEFAULT_DOMAINS = List.of(
-            "picacomic.com",
             "picaapi.go2778.com",
+            "picacomic.com",
             "picaapi.acbbb.com",
             "picaapi.picacomic.com"
     );
