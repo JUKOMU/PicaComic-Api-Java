@@ -7,6 +7,8 @@ import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 import io.github.jukomu.picacomic.core.constant.PicaConstants;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Modifier;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -28,14 +30,16 @@ class PicaConfigurationIsolationTest {
         PicaConfiguration configuration = new PicaConfiguration.Builder()
                 .domains(domains)
                 .timeout(Duration.ofSeconds(2))
-                .concurrentImageDownloads(4)
-                .maxImageBytes(1024)
+                .downloadThreadPoolSize(11)
+                .concurrentPhotoDownloads(7)
+                .concurrentImageDownloads(9)
                 .build();
         domains.set(0, "changed.test");
 
         assertEquals(List.of("api-one.test", "api-two.test"), configuration.getDomains());
-        assertEquals(1024, configuration.getMaxImageBytes());
-        assertEquals(4, configuration.getConcurrentImageDownloads());
+        assertEquals(11, configuration.getDownloadThreadPoolSize());
+        assertEquals(7, configuration.getConcurrentPhotoDownloads());
+        assertEquals(9, configuration.getConcurrentImageDownloads());
         assertThrows(UnsupportedOperationException.class,
                 () -> configuration.getDomains().add("other.test"));
 
@@ -46,6 +50,25 @@ class PicaConfigurationIsolationTest {
         } finally {
             client.close();
         }
+    }
+
+    @Test
+    void concurrencyDefaultsAndPropertiesAreRealConfiguration() throws Exception {
+        PicaConfiguration defaults = new PicaConfiguration.Builder().build();
+        assertEquals(12, defaults.getDownloadThreadPoolSize());
+        assertEquals(3, defaults.getConcurrentPhotoDownloads());
+        assertEquals(20, defaults.getConcurrentImageDownloads());
+
+        PicaConfiguration fromProperties = new PicaConfiguration.Builder()
+                .loadFromProperties(new ByteArrayInputStream((
+                        "download.thread.pool.size=17\n"
+                                + "concurrent.photo.downloads=19\n"
+                                + "concurrent.image.downloads=23\n")
+                        .getBytes(StandardCharsets.UTF_8)))
+                .build();
+        assertEquals(17, fromProperties.getDownloadThreadPoolSize());
+        assertEquals(19, fromProperties.getConcurrentPhotoDownloads());
+        assertEquals(23, fromProperties.getConcurrentImageDownloads());
     }
 
     @Test
@@ -63,13 +86,26 @@ class PicaConfigurationIsolationTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new PicaConfiguration.Builder().proxy("127.0.0.1", 0));
         assertThrows(IllegalArgumentException.class,
+                () -> new PicaConfiguration.Builder().downloadThreadPoolSize(0));
+        assertThrows(IllegalArgumentException.class,
+                () -> new PicaConfiguration.Builder().downloadThreadPoolSize(-1));
+        assertThrows(IllegalArgumentException.class,
                 () -> new PicaConfiguration.Builder().concurrentImageDownloads(0));
         assertThrows(IllegalArgumentException.class,
-                () -> new PicaConfiguration.Builder().concurrentImageDownloads(5));
+                () -> new PicaConfiguration.Builder().concurrentImageDownloads(-1));
         assertThrows(IllegalArgumentException.class,
-                () -> new PicaConfiguration.Builder().maxImageBytes(0));
+                () -> new PicaConfiguration.Builder().concurrentPhotoDownloads(0));
         assertThrows(IllegalArgumentException.class,
-                () -> new PicaConfiguration.Builder().maxImageBytes(33L * 1024 * 1024));
+                () -> new PicaConfiguration.Builder().concurrentPhotoDownloads(-1));
+
+        PicaConfiguration largePositive = new PicaConfiguration.Builder()
+                .downloadThreadPoolSize(5)
+                .concurrentPhotoDownloads(5)
+                .concurrentImageDownloads(5)
+                .build();
+        assertEquals(5, largePositive.getDownloadThreadPoolSize());
+        assertEquals(5, largePositive.getConcurrentPhotoDownloads());
+        assertEquals(5, largePositive.getConcurrentImageDownloads());
     }
 
     @Test

@@ -27,7 +27,7 @@
 | 额外功能 | 实现情况 |
 |:---------------------------|:---------------------------------|
 | **API/image 网络边界** | ✅ 双 OkHttp client、固定 host 策略 |
-| **图片大小与并发边界** | ✅ 单图最多 32 MiB、client 级 64 MiB budget |
+| **图片并发边界** | ✅ 每 client 公平 semaphore，由配置驱动 |
 | **原子图片落盘** | ✅ 同目录临时文件 + `ATOMIC_MOVE` |
 
 
@@ -92,7 +92,7 @@
 * **并发下载**:
     * 提供了 `downloadAlbum` 和 `downloadPhoto` 等高级方法，叶子图片任务使用调用者提供或 client 自有的 `ExecutorService`。
     * 批量下载操作返回 `DownloadResult` 对象，其中包含了成功与失败任务的详细报告。
-    * 图片单次请求通过 `PicaImageRequest.execute/cancel/close` 保持同步 API，同时允许页面级取消。单图上限为 32 MiB，每个 client 的在途 payload budget 固定为 64 MiB，默认图片并发为 2（可配置范围 1..4）。
+    * 图片单次请求通过 `PicaImageRequest.execute/cancel/close` 保持同步 API，同时允许页面级取消。图片读取不设置库级字节或聚合内存上限；默认图片并发为 20，只接受正数配置。
     * 下载文件先完整写入同目录 `.part` 文件，再执行 `ATOMIC_MOVE`；不支持原子移动时失败，不降级为直接覆盖最终文件。
 
 ---
@@ -212,17 +212,18 @@ PicaConfiguration config = new PicaConfiguration.Builder()
         .retryTimes(5) // 设置最大重试次数
         .downloadThreadPoolSize(12) // 设置内部下载线程池大小
         .concurrentPhotoDownloads(3) // 设置同时下载的章节数
-        .concurrentImageDownloads(2) // 设置同时读取图片的数量（范围 1..4）
-        .maxImageBytes(32L * 1024 * 1024) // 单图上限；client 级 64 MiB budget 由库固定管理
+        .concurrentImageDownloads(20) // 设置同时读取图片的数量（必须为正数）
         // .imageQuality(ImageQuality.ORIGINAL) // 设置下载的图片质量
         .build();
 ```
+
+`downloadThreadPoolSize` 默认值为 12，`concurrentPhotoDownloads` 默认值为 3，`concurrentImageDownloads` 默认值为 20；三者都必须为正数，且没有库级硬上限。使用 `loadFromProperties` 时对应的键为 `download.thread.pool.size`、`concurrent.photo.downloads` 和 `concurrent.image.downloads`。
 
 代理只作用于该配置创建的 client，可能观察网络元数据；库不会因失败自动启用或切换代理。图片请求始终创建空白 HTTPS `GET`，手动校验最多三跳 redirect，并且不会继承 API 的 Cookie、Token、签名或请求体。
 
 `fetchImageBytes` 是阻塞便利方法；需要取消时使用 `PicaImageRequest request = client.newImageRequest(image)`，在自己的 executor 中调用 `request.execute()`，并在页面销毁时调用 `request.cancel()`/`request.close()`。返回的 `byte[]` 在便利方法返回后归调用者所有，库不限制调用者长期保留它。
 
-图片失败统一抛出 `ImageFetchException`，可通过 `getReason()` 判断 `INVALID_SOURCE`、`DISALLOWED_HOST`、`REDIRECT_REJECTED`、`TOO_LARGE`、`UNSUPPORTED_MEDIA_TYPE`、`TIMEOUT`、`CANCELLED` 或 `CLIENT_CLOSED` 等稳定原因。README 中的示例凭据仅为占位文本；本项目的测试只访问本地 TLS fixture，不访问真实服务。
+图片失败统一抛出 `ImageFetchException`，可通过 `getReason()` 判断 `INVALID_SOURCE`、`DISALLOWED_HOST`、`REDIRECT_REJECTED`、`UNSUPPORTED_MEDIA_TYPE`、`TIMEOUT`、`CANCELLED` 或 `CLIENT_CLOSED` 等稳定原因。图片返回值是调用者持有的 `byte[]`，库不提供资源耗尽保护。README 中的示例凭据仅为占位文本；本项目的测试只访问本地 TLS fixture，不访问真实服务。
 
 ### 自定义文件存储路径
 

@@ -25,7 +25,7 @@
 | Additional Features | Implementation Status |
 |:---------------------------|:---------------------------------|
 | **API/image network boundary** | ✅ Separate OkHttp clients and fixed host policy |
-| **Image size and concurrency boundary** | ✅ 32 MiB per image, 64 MiB per-client budget |
+| **Image concurrency boundary** | ✅ Per-client fair semaphore driven by configuration |
 | **Atomic image landing** | ✅ Same-directory temporary file + `ATOMIC_MOVE` |
 
 
@@ -90,7 +90,7 @@ This module contains the specific implementation logic for all features, handlin
 * **Concurrent Downloading**:
     * Provides advanced methods like `downloadAlbum` and `downloadPhoto`; only leaf image work is submitted to the caller-provided or client-owned `ExecutorService`.
     * Batch download operations return a `DownloadResult` object, which contains detailed reports of successful and failed tasks.
-    * `PicaImageRequest.execute/cancel/close` keeps single-image access blocking while allowing page-level cancellation. Images are limited to 32 MiB; each client has a fixed 64 MiB in-flight payload budget and defaults to two image readers (range 1..4).
+    * `PicaImageRequest.execute/cancel/close` keeps single-image access blocking while allowing page-level cancellation. Image reads have no library-level byte or aggregate-memory cap; image concurrency defaults to 20 and accepts positive configuration values.
     * Files are written completely to a same-directory `.part` file before `ATOMIC_MOVE`; unsupported atomic moves fail instead of falling back to a visible partial file.
 
 ---
@@ -210,17 +210,18 @@ PicaConfiguration config = new PicaConfiguration.Builder()
         .retryTimes(5) // Set maximum retry times
         .downloadThreadPoolSize(12) // Set internal download thread pool size
         .concurrentPhotoDownloads(3) // Set the number of concurrent chapter downloads
-        .concurrentImageDownloads(2) // Number of concurrent image readers (range 1..4)
-        .maxImageBytes(32L * 1024 * 1024) // Per-image limit; 64 MiB client budget is fixed
+        .concurrentImageDownloads(20) // Number of concurrent image readers (must be positive)
         // .imageQuality(ImageQuality.ORIGINAL) // Set downloaded image quality
         .build();
 ```
+
+`downloadThreadPoolSize` defaults to 12, `concurrentPhotoDownloads` defaults to 3, and `concurrentImageDownloads` defaults to 20. All three values must be positive and have no library-level hard upper bound. With `loadFromProperties`, use `download.thread.pool.size`, `concurrent.photo.downloads`, and `concurrent.image.downloads` respectively.
 
 The proxy applies only to clients created from this configuration and may observe network metadata. The library never enables or switches to a proxy after a failure. Image requests are fresh HTTPS `GET` requests, manually validate at most three redirects, and never inherit API cookies, tokens, signatures, or request bodies.
 
 `fetchImageBytes` is blocking. For cancellation, create `PicaImageRequest request = client.newImageRequest(image)`, call `request.execute()` from an executor owned by your application, and call `request.cancel()`/`request.close()` when the page is destroyed. The returned `byte[]` belongs to the caller after the convenience method returns; the library cannot limit how long the caller retains it.
 
-Image failures are reported as `ImageFetchException`; use `getReason()` for stable values such as `INVALID_SOURCE`, `DISALLOWED_HOST`, `REDIRECT_REJECTED`, `TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE`, `TIMEOUT`, `CANCELLED`, and `CLIENT_CLOSED`. Credentials in the examples are placeholders only; tests use local TLS fixtures and never access the real service.
+Image failures are reported as `ImageFetchException`; use `getReason()` for stable values such as `INVALID_SOURCE`, `DISALLOWED_HOST`, `REDIRECT_REJECTED`, `UNSUPPORTED_MEDIA_TYPE`, `TIMEOUT`, `CANCELLED`, and `CLIENT_CLOSED`. Returned image bytes belong to the caller; the library does not provide resource-exhaustion protection. Credentials in the examples are placeholders only; tests use local TLS fixtures and never access the real service.
 
 ### Custom File Storage Path
 

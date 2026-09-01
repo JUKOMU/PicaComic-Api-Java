@@ -20,14 +20,10 @@ import java.util.concurrent.ExecutorService;
 /**
  * 创建 client 所需的不可变 value snapshot。
  *
- * <p>运行时状态（Cookie、缓存、域名健康度、图片预算和关闭状态）不属于配置，
+ * <p>运行时状态（Cookie、缓存、域名健康度和关闭状态）不属于配置，
  * 因而同一个配置可以安全地创建多个相互隔离的 client。</p>
  */
 public final class PicaConfiguration {
-
-    public static final int DEFAULT_MAX_IMAGE_BYTES = 32 * 1024 * 1024;
-    public static final int MIN_CONCURRENT_DOWNLOADS = 1;
-    public static final int MAX_CONCURRENT_DOWNLOADS = 4;
 
     private final List<String> domains;
     private final Proxy proxy;
@@ -39,8 +35,6 @@ public final class PicaConfiguration {
     private final int concurrentPhotoDownloads;
     private final int concurrentImageDownloads;
     private final ImageQuality imageQuality;
-    private final int maxImageBytes;
-
     private PicaConfiguration(Builder builder) {
         this.domains = normalizeDomains(builder.domains);
         this.proxy = builder.proxy;
@@ -49,10 +43,9 @@ public final class PicaConfiguration {
         this.executor = builder.executor;
         this.downloadThreadPoolSize = validatePositive(builder.downloadThreadPoolSize, "Download thread pool size");
         this.cacheSize = validateNonNegative(builder.cacheSize, "Cache size");
-        this.concurrentPhotoDownloads = validateConcurrent(builder.concurrentPhotoDownloads, "Concurrent photo downloads");
-        this.concurrentImageDownloads = validateConcurrent(builder.concurrentImageDownloads, "Concurrent image downloads");
+        this.concurrentPhotoDownloads = validatePositive(builder.concurrentPhotoDownloads, "Concurrent photo downloads");
+        this.concurrentImageDownloads = validatePositive(builder.concurrentImageDownloads, "Concurrent image downloads");
         this.imageQuality = Objects.requireNonNull(builder.imageQuality, "Image quality cannot be null");
-        this.maxImageBytes = validateMaxImageBytes(builder.maxImageBytes);
     }
 
     /**
@@ -107,10 +100,6 @@ public final class PicaConfiguration {
         return imageQuality;
     }
 
-    public int getMaxImageBytes() {
-        return maxImageBytes;
-    }
-
     /**
      * 用于创建 {@link PicaConfiguration} 的 Builder。
      */
@@ -123,9 +112,8 @@ public final class PicaConfiguration {
         private int downloadThreadPoolSize = 12;
         private int cacheSize = 100 * 1024 * 1024;
         private int concurrentPhotoDownloads = 3;
-        private int concurrentImageDownloads = 2;
+        private int concurrentImageDownloads = 20;
         private ImageQuality imageQuality = ImageQuality.MEDIUM;
-        private long maxImageBytes = DEFAULT_MAX_IMAGE_BYTES;
 
         public Builder domains(List<String> domains) {
             this.domains = new ArrayList<>(Objects.requireNonNull(domains, "Domains cannot be null"));
@@ -163,22 +151,17 @@ public final class PicaConfiguration {
         }
 
         public Builder concurrentPhotoDownloads(int size) {
-            this.concurrentPhotoDownloads = validateConcurrent(size, "Concurrent photo downloads");
+            this.concurrentPhotoDownloads = validatePositive(size, "Concurrent photo downloads");
             return this;
         }
 
         public Builder concurrentImageDownloads(int size) {
-            this.concurrentImageDownloads = validateConcurrent(size, "Concurrent image downloads");
+            this.concurrentImageDownloads = validatePositive(size, "Concurrent image downloads");
             return this;
         }
 
         public Builder imageQuality(ImageQuality imageQuality) {
             this.imageQuality = Objects.requireNonNull(imageQuality, "Image quality cannot be null");
-            return this;
-        }
-
-        public Builder maxImageBytes(long maxImageBytes) {
-            this.maxImageBytes = validateMaxImageBytes(maxImageBytes);
             return this;
         }
 
@@ -195,8 +178,14 @@ public final class PicaConfiguration {
             if (props.containsKey("retry.times")) {
                 retryTimes(Integer.parseInt(props.getProperty("retry.times")));
             }
-            if (props.containsKey("max.image.bytes")) {
-                maxImageBytes(Long.parseLong(props.getProperty("max.image.bytes")));
+            if (props.containsKey("download.thread.pool.size")) {
+                downloadThreadPoolSize(Integer.parseInt(props.getProperty("download.thread.pool.size")));
+            }
+            if (props.containsKey("concurrent.photo.downloads")) {
+                concurrentPhotoDownloads(Integer.parseInt(props.getProperty("concurrent.photo.downloads")));
+            }
+            if (props.containsKey("concurrent.image.downloads")) {
+                concurrentImageDownloads(Integer.parseInt(props.getProperty("concurrent.image.downloads")));
             }
             return this;
         }
@@ -317,18 +306,4 @@ public final class PicaConfiguration {
         return value;
     }
 
-    private static int validateConcurrent(int value, String name) {
-        if (value < MIN_CONCURRENT_DOWNLOADS || value > MAX_CONCURRENT_DOWNLOADS) {
-            throw new IllegalArgumentException(name + " must be between "
-                    + MIN_CONCURRENT_DOWNLOADS + " and " + MAX_CONCURRENT_DOWNLOADS);
-        }
-        return value;
-    }
-
-    private static int validateMaxImageBytes(long value) {
-        if (value < 1 || value > DEFAULT_MAX_IMAGE_BYTES) {
-            throw new IllegalArgumentException("Max image bytes must be between 1 and 32 MiB");
-        }
-        return (int) value;
-    }
 }

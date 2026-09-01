@@ -106,7 +106,6 @@ final class DefaultPicaClient implements IPicaClient {
     private final int concurrentImageDownloads;
     private final ImageQuality imageQuality;
     private final ImageLocatorResolver imageLocatorResolver;
-    private final ImageMemoryBudget imageMemoryBudget;
     private final Semaphore readerSlots;
     private final ImageFileWriter imageFileWriter;
     private final ImageFileMover imageFileMover;
@@ -149,7 +148,6 @@ final class DefaultPicaClient implements IPicaClient {
         this.concurrentImageDownloads = config.getConcurrentImageDownloads();
         this.imageQuality = config.getImageQuality();
         this.imageLocatorResolver = new ImageLocatorResolver(new ImageHostPolicy());
-        this.imageMemoryBudget = new ImageMemoryBudget();
         this.readerSlots = new Semaphore(concurrentImageDownloads, true);
     }
 
@@ -417,10 +415,8 @@ final class DefaultPicaClient implements IPicaClient {
                 image,
                 imageClient,
                 imageLocatorResolver,
-                imageMemoryBudget,
                 readerSlots,
                 config.getTimeout(),
-                config.getMaxImageBytes(),
                 closed::get,
                 this::registerImageCall,
                 this::unregisterImageCall,
@@ -866,8 +862,6 @@ final class DefaultPicaClient implements IPicaClient {
         loggedInUserName = null;
         cookieManager.getCookieStore().removeAll();
         cachePool.clear();
-        imageMemoryBudget.signalWaiters();
-
         closeHttpClient(apiClient);
         closeHttpClient(imageClient);
         if (ownsDownloadExecutor) {

@@ -1,5 +1,7 @@
 package io.github.jukomu.picacomic.external;
 
+import io.github.jukomu.picacomic.api.exception.ImageFetchException;
+import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -11,10 +13,12 @@ import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -66,6 +70,18 @@ class PublicSurfaceCompilationTest {
                 """;
         assertFalse(compile("ForbiddenConsumer", forbidden),
                 "raw clients, domain state, cookies, and concrete requests must not compile externally");
+    }
+
+    @Test
+    void removedImageSizeSurfaceAndReasonStayAbsent() throws Exception {
+        assertThrows(NoSuchFieldException.class,
+                () -> PicaConfiguration.class.getField("DEFAULT_MAX_IMAGE_BYTES"));
+        assertThrows(NoSuchMethodException.class,
+                () -> PicaConfiguration.class.getMethod("getMaxImageBytes"));
+        assertThrows(NoSuchMethodException.class,
+                () -> PicaConfiguration.Builder.class.getMethod("maxImageBytes", long.class));
+        assertFalse(Arrays.stream(ImageFetchException.Reason.values())
+                .anyMatch(reason -> "TOO_LARGE".equals(reason.name())));
     }
 
     private boolean compile(String className, String source) throws IOException {

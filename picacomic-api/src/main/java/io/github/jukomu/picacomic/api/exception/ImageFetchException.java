@@ -13,7 +13,6 @@ public final class ImageFetchException extends PicaComicException {
         DISALLOWED_HOST,
         REDIRECT_REJECTED,
         HTTP_STATUS,
-        TOO_LARGE,
         UNSUPPORTED_MEDIA_TYPE,
         UNSUPPORTED_CONTENT_ENCODING,
         INVALID_CONTENT,

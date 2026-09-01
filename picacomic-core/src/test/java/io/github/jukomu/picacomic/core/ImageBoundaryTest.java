@@ -35,7 +35,7 @@ class ImageBoundaryTest {
                     .setResponseCode(200)
                     .setHeader("Content-Type", "image/png")
                     .setBody("png-fixture"));
-            try (IPicaClient client = client(fixture, 64)) {
+            try (IPicaClient client = client(fixture)) {
                 client.login("fixture-user", "fixture-password");
                 byte[] bytes = client.fetchImageBytes(image(fixture, "s2.picacomic.com", "one.png"));
                 assertEquals("png-fixture", new String(bytes));
@@ -55,7 +55,7 @@ class ImageBoundaryTest {
 
     @Test
     void unknownSourcesAreRejectedBeforeNetwork() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 64)) {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             assertReason(client, new PicaImage("x", "x", "https://unknown.test", null),
                     ImageFetchException.Reason.DISALLOWED_HOST);
             assertReason(client, new PicaImage("x", "x", "http://s2.picacomic.com", null),
@@ -74,7 +74,7 @@ class ImageBoundaryTest {
 
     @Test
     void onlyHttp200RasterIdentityResponsesSucceed() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 64)) {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(206)
                     .setHeader("Content-Type", "image/png").setBody("partial"));
             assertReason(client, image(fixture, "s2.picacomic.com", "partial.png"),
@@ -95,7 +95,7 @@ class ImageBoundaryTest {
 
     @Test
     void fileServerAndPathAreCombinedThroughTheSamePolicy() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 64)) {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
                     .setHeader("Content-Type", "image/gif").setBody("gif"));
             PicaImage fromFields = new PicaImage("field.gif", "folder/field.gif",
@@ -106,26 +106,26 @@ class ImageBoundaryTest {
     }
 
     @Test
-    void knownAndChunkedBodiesAreBounded() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 4)) {
+    void smallFixedAndChunkedBodiesAreReadToEof() throws Exception {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
                     .setHeader("Content-Type", "image/png")
                     .setHeader("Content-Length", "5").setBody("12345"));
-            assertReason(client, image(fixture, "s2.picacomic.com", "known.png"),
-                    ImageFetchException.Reason.TOO_LARGE);
+            assertEquals("12345", new String(client.fetchImageBytes(
+                    image(fixture, "s2.picacomic.com", "known.png"))));
 
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
                     .setHeader("Content-Type", "image/png")
                     .setChunkedBody("12345", 2));
-            assertReason(client, image(fixture, "s2.picacomic.com", "chunked.png"),
-                    ImageFetchException.Reason.TOO_LARGE);
+            assertEquals("12345", new String(client.fetchImageBytes(
+                    image(fixture, "s2.picacomic.com", "chunked.png"))));
             assertEquals(2, fixture.server.getRequestCount());
         }
     }
 
     @Test
     void fixedLengthEarlyEofIsStableAndDoesNotReturnPartialBytes() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 64)) {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
                     .setHeader("Content-Type", "image/png")
                     .setBody("abc").setHeader("Content-Length", "4")
@@ -137,7 +137,7 @@ class ImageBoundaryTest {
 
     @Test
     void redirectsAreManualFreshBlankRequestsAndUnknownTargetsAreRejected() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 64)) {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(302)
                     .setHeader("Location", "/static/second.png"));
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
@@ -161,7 +161,7 @@ class ImageBoundaryTest {
 
     @Test
     void crossAllowlistedHostRedirectIsRevalidated() throws Exception {
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 64)) {
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture)) {
             fixture.server.enqueue(new MockResponse().setResponseCode(307)
                     .setHeader("Location", fixture.url("s3.picacomic.com", "/static/second.webp")));
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
@@ -180,7 +180,7 @@ class ImageBoundaryTest {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
                     .setHeader("Content-Type", "image/png")
                     .setBody("0123456789").throttleBody(1, 1, TimeUnit.SECONDS));
-            try (IPicaClient client = client(fixture, 64)) {
+            try (IPicaClient client = client(fixture)) {
                 var request = client.newImageRequest(image(fixture, "s2.picacomic.com", "slow.png"));
                 ExecutorService caller = Executors.newSingleThreadExecutor();
                 try {
@@ -199,7 +199,7 @@ class ImageBoundaryTest {
             }
         }
 
-        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture, 64,
+        try (LocalTlsFixture fixture = new LocalTlsFixture(); IPicaClient client = client(fixture,
                 Duration.ofMillis(100))) {
             fixture.server.enqueue(new MockResponse().setResponseCode(200)
                     .setHeadersDelay(1, TimeUnit.SECONDS)
@@ -241,14 +241,13 @@ class ImageBoundaryTest {
         }
     }
 
-    private static IPicaClient client(LocalTlsFixture fixture, int maxBytes) {
-        return client(fixture, maxBytes, Duration.ofSeconds(3));
+    private static IPicaClient client(LocalTlsFixture fixture) {
+        return client(fixture, Duration.ofSeconds(3));
     }
 
-    private static IPicaClient client(LocalTlsFixture fixture, int maxBytes, Duration timeout) {
+    private static IPicaClient client(LocalTlsFixture fixture, Duration timeout) {
         PicaConfiguration config = new PicaConfiguration.Builder()
                 .domains(List.of("api-one.test", "api-two.test"))
-                .maxImageBytes(maxBytes)
                 .timeout(timeout)
                 .retryTimes(1)
                 .build();
