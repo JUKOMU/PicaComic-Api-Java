@@ -7,13 +7,17 @@ package io.github.jukomu.picacomic.api.exception;
  * @Project: PicaComic-Api-Java
  * @Date: 2026/02/19
  */
-public class NetworkException extends PicaComicException {
+public class NetworkException extends PicaApiException {
 
     public NetworkException(String message) {
-        super(message);
+        super(Reason.NETWORK);
     }
 
     public NetworkException(String message, Throwable cause) {
-        super(message, cause);
+        super(Reason.NETWORK, cause);
+    }
+
+    public NetworkException(Reason reason, Throwable cause) {
+        super(reason, cause);
     }
 }

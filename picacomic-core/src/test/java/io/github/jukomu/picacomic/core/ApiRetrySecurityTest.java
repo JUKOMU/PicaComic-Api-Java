@@ -41,13 +41,14 @@ class ApiRetrySecurityTest {
             fixture.server.enqueue(new MockResponse().setResponseCode(403).setBody("forbidden"));
             fixture.server.enqueue(new MockResponse().setResponseCode(502).setBody("temporary"));
             fixture.server.enqueue(loginResponse());
+            fixture.server.enqueue(profileResponse());
 
             PicaConfiguration config = config(List.of("api-one.test", "api-two.test"), 3);
             try (IPicaClient client = newClient(fixture, config)) {
                 assertNotNull(client.login("user@example.test", "fixture-password"));
             }
 
-            assertEquals(6, fixture.server.getRequestCount());
+            assertEquals(7, fixture.server.getRequestCount());
             assertProbeRequests(fixture, 2);
             List<RecordedRequest> attempts = takeRequests(fixture, 4);
             List<String> bodies = attempts.stream().map(request -> request.getBody().readUtf8()).toList();
@@ -147,11 +148,12 @@ class ApiRetrySecurityTest {
         try (LocalTlsFixture fixture = new LocalTlsFixture()) {
             enqueueProbeResponses(fixture, 2, 503);
             fixture.server.enqueue(loginResponse());
+            fixture.server.enqueue(profileResponse());
             PicaConfiguration config = config(List.of("api-one.test", "api-two.test"), 0);
             try (IPicaClient client = newClient(fixture, config)) {
                 assertNotNull(client.login("fixture-user", "fixture-password"));
             }
-            assertEquals(3, fixture.server.getRequestCount());
+            assertEquals(4, fixture.server.getRequestCount());
             assertProbeRequests(fixture, 2);
             RecordedRequest actual = fixture.server.takeRequest();
             assertEquals("POST", actual.getMethod());
@@ -195,6 +197,12 @@ class ApiRetrySecurityTest {
         return new MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody("{\"data\":{\"token\":\"fixture-token\"}}");
+    }
+
+    private static MockResponse profileResponse() {
+        return new MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"data\":{\"user\":{\"_id\":\"fixture-user-id\",\"name\":\"fixture-user\"}}}");
     }
 
     private static void enqueueProbeResponses(LocalTlsFixture fixture, int count, int status) {

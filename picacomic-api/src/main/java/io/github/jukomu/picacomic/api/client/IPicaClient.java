@@ -45,6 +45,30 @@ public interface IPicaClient extends AutoCloseable {
     PicaPhoto getPhoto(String albumId, int order);
 
     /**
+     * 根据稳定章节 ID 获取章节详情；该路径使用章节 ID 作为缓存身份。
+     *
+     * @param albumId   本子 ID
+     * @param chapterId 稳定章节 ID
+     * @return 章节详情对象
+     */
+    PicaPhoto getPhoto(String albumId, String chapterId);
+
+    /**
+     * 绕过章节缓存并按稳定章节 ID 刷新章节详情。
+     */
+    PicaPhoto refreshPhoto(String albumId, String chapterId);
+
+    /**
+     * 绕过缓存刷新本子及其章节索引。
+     */
+    PicaAlbum refreshAlbum(String albumId);
+
+    /**
+     * 本地使本子及其章节缓存失效；下一次读取会访问网络。
+     */
+    void invalidateAlbum(String albumId);
+
+    /**
      * 获取一张图片的二进制数据
      *
      * @param image 图片信息
@@ -67,6 +91,32 @@ public interface IPicaClient extends AutoCloseable {
      * @return 单次图片请求句柄
      */
     PicaImageRequest newImageRequest(PicaImage image);
+
+    PicaRequest<PicaAlbum> newAlbumRequest(String albumId);
+
+    PicaRequest<PicaAlbum> newAlbumRefreshRequest(String albumId);
+
+    PicaRequest<PicaPhoto> newPhotoRequest(String albumId, String chapterId);
+
+    PicaRequest<PicaPhoto> newPhotoRefreshRequest(String albumId, String chapterId);
+
+    PicaRequest<PicaPhoto> newPhotoByOrderRequest(String albumId, int order);
+
+    PicaRequest<PicaContentPage> newSearchRequest(SearchQuery query);
+
+    PicaRequest<PicaContentPage> newFavoritesRequest(SearchQuery query);
+
+    PicaRequest<PicaContentPage> newCategoriesRequest(SearchQuery query);
+
+    PicaRequest<PicaContentPage> newLeaderboardRequest(TimeOption timeOption);
+
+    PicaRequest<List<PicaUserInfo>> newKnightLeaderboardRequest();
+
+    PicaRequest<PicaContentPage> newRandomAlbumsRequest();
+
+    PicaRequest<PicaUserInfo> newUserInfoRequest();
+
+    PicaRequest<PicaUserInfo> newLoginRequest(String userNameOrEmail, String password);
 
     /**
      * 搜索本子
@@ -131,6 +181,16 @@ public interface IPicaClient extends AutoCloseable {
      * @return 用户信息对象
      */
     PicaUserInfo login(String userNameOrEmail, String password);
+
+    /**
+     * 获取不含 token、cookie 或密码的当前进程会话快照。
+     */
+    PicaSessionSnapshot getSession();
+
+    /**
+     * 清除当前 client 的本地会话并取消该会话的 API 请求。
+     */
+    void logout();
 
     // == 便利操作层 ==
 

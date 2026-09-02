@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -147,11 +148,49 @@ public final class CachePool<K, V> {
                 LinkedHashSet<Node<K, V>> set = freqMap.get(node.freq);
                 if (set != null) {
                     set.remove(node);
+                    if (set.isEmpty()) {
+                        freqMap.remove(node.freq);
+                    }
                 }
                 currentSize -= node.weight;
+                minFreq = freqMap.keySet().stream().min(Integer::compareTo).orElse(0);
                 logger.debug("Cache REMOVED for key: {}", key);
             } else {
                 logger.debug("Cache REMOVE FAILED (key not found) for key: {}", key);
+            }
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    /**
+     * Removes every entry matching the supplied key predicate.
+     */
+    public void removeIf(Predicate<? super K> predicate) {
+        if (predicate == null) {
+            throw new NullPointerException("Cache key predicate cannot be null");
+        }
+        writeLock.lock();
+        try {
+            cacheMap.entrySet().removeIf(entry -> {
+                if (!predicate.test(entry.getKey())) {
+                    return false;
+                }
+                Node<K, V> node = entry.getValue();
+                LinkedHashSet<Node<K, V>> set = freqMap.get(node.freq);
+                if (set != null) {
+                    set.remove(node);
+                    if (set.isEmpty()) {
+                        freqMap.remove(node.freq);
+                    }
+                }
+                currentSize -= node.weight;
+                return true;
+            });
+            if (cacheMap.isEmpty()) {
+                minFreq = 0;
+            } else {
+                minFreq = freqMap.keySet().stream().min(Integer::compareTo).orElse(0);
             }
         } finally {
             writeLock.unlock();

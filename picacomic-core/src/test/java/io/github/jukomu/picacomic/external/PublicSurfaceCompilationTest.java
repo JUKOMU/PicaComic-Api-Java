@@ -35,15 +35,22 @@ class PublicSurfaceCompilationTest {
                 package external.consumer;
                 import io.github.jukomu.picacomic.api.client.IPicaClient;
                 import io.github.jukomu.picacomic.api.client.PicaImageRequest;
+                import io.github.jukomu.picacomic.api.client.PicaRequest;
                 import io.github.jukomu.picacomic.api.model.PicaImage;
+                import io.github.jukomu.picacomic.api.model.PicaSessionSnapshot;
                 import io.github.jukomu.picacomic.core.PicaComic;
                 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
                 class AllowedConsumer {
                     void createAndClose() {
                         PicaConfiguration config = new PicaConfiguration.Builder().build();
                         try (IPicaClient client = PicaComic.newApiClient(config)) {
+                            PicaSessionSnapshot session = client.getSession();
+                            PicaRequest<?> album = client.newAlbumRequest("album-id");
                             PicaImageRequest request = client.newImageRequest(
                                     new PicaImage("image.png", "", "https://s2.picacomic.com", null));
+                            client.logout();
+                            session.getState();
+                            album.close();
                             request.close();
                         }
                     }

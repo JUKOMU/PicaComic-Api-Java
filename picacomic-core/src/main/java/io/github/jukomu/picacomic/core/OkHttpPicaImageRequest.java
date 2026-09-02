@@ -47,6 +47,7 @@ final class OkHttpPicaImageRequest implements PicaImageRequest {
     private final AtomicBoolean closeRequested = new AtomicBoolean();
     private final AtomicBoolean deregistered = new AtomicBoolean();
     private final Object lifecycleLock = new Object();
+    private boolean executionAttempted;
 
     OkHttpPicaImageRequest(PicaImage image,
                            OkHttpClient imageClient,
@@ -69,8 +70,15 @@ final class OkHttpPicaImageRequest implements PicaImageRequest {
     @Override
     public byte[] execute() {
         synchronized (lifecycleLock) {
+            if (executionAttempted) {
+                throw new IllegalStateException("An image request can only be executed once");
+            }
+            executionAttempted = true;
             State observed = state.get();
             if (observed != State.NEW) {
+                if (clientClosed.getAsBoolean()) {
+                    termination.set(ImageFetchException.Reason.CLIENT_CLOSED);
+                }
                 ImageFetchException.Reason reason = termination.get();
                 if (reason != null) {
                     throw new ImageFetchException(reason);

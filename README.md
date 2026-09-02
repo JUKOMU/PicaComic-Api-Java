@@ -49,7 +49,7 @@
 
 #### 2. 会话管理层
 管理 PicaComic 客户端的身份认证与会话状态。
-- [x] **用户登录 (`login`)**：支持使用用户名或邮箱与密码进行账号登录，完成 Token 凭证获取及维护。
+- [x] **用户登录 (`login`)**：在一个原子请求中完成 sign-in 与 profile，只有拿到完整稳定用户 ID 才进入已登录状态。
 
 #### 3. 智能下载操作层 (便利操作)
 内置高度灵活且支持并发的下载工具。
@@ -74,7 +74,7 @@
 
 此模块定义了库的公共契约，不包含第三方网络库依赖，可独立集成。
 
-* **领域模型**: 提供一套不可变数据对象，用于描述 `PicaAlbum` (本子), `PicaPhoto` (章节), `PicaImage` (图片), `PicaContentPage` (分页内容), `PicaUserInfo` (用户信息) 等核心实体。
+* **领域模型**: 提供 record 数据对象，用于描述 `PicaAlbum` (本子), `PicaPhoto` (章节), `PicaImage` (图片), `PicaContentPage` (分页内容), `PicaUserInfo` (用户信息) 等核心实体；公开集合保持可修改，client 内部会递归复制以隔离缓存和会话。
 * **客户端接口 (`IPicaClient`)**: 抽象并统一了所有业务操作，包括实体获取 (`getAlbum`, `getPhoto`)、列表查询 (`search`, `getCategories`, `getFavorites`)、排行榜查询 (`getLeaderboard`, `getKnightLeaderboard`)、用户会话 (`login`) 和下载 (`downloadAlbum`, `downloadPhoto` 等)。
 * **策略接口**: 定义了如 `IAlbumPathGenerator`, `IPhotoPathGenerator` 等策略接口，允许调用者注入自定义逻辑来控制文件存储等外部交互行为。
 
@@ -84,7 +84,8 @@
 
 * **客户端实现**:
     * **API 请求**: 通过封装 OkHttp 调用 PicaComic 移动端 API 进行数据交互。
-    * **会话管理**: 管理用户的登录状态、Token 凭证维护。
+    * **会话管理**: 管理 `SIGNED_OUT`、`AUTHENTICATING`、`SIGNED_IN` 与 `EXPIRED` 状态；凭据仅存在于当前 client 进程，不保存密码，也不自动恢复。
+    * **结构化错误**: API 失败统一提供 `PicaApiException.Reason`、最终 HTTP status、provider code 和 `Retry-After`，异常 message 与 cause 不包含响应体、URL、headers 或凭据。
 * **网络处理**:
     * **API/image 分离**: 每个 `IPicaClient` 独占 API 与图片两只 OkHttp client。图片 client 不带 Cookie、Token、签名或 API interceptor。
     * **安全重试**: API 请求在配置的 host 池内按健康分数选择目标，并在 I/O、`403` 或任意 `5xx` 时按 `retryTimes` 有界重试；GET 与 POST 使用相同规则。API 使用 OkHttp 默认 redirect 行为。
@@ -144,7 +145,10 @@ package io.github.jukomu.picacomic.sample;
 
 import io.github.jukomu.picacomic.api.client.DownloadResult;
 import io.github.jukomu.picacomic.api.client.IPicaClient;
+import io.github.jukomu.picacomic.api.client.PicaRequest;
+import io.github.jukomu.picacomic.api.exception.PicaApiException;
 import io.github.jukomu.picacomic.api.model.PicaAlbum;
+import io.github.jukomu.picacomic.api.model.PicaUserInfo;
 import io.github.jukomu.picacomic.core.PicaComic;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 
@@ -159,14 +163,15 @@ public class DownloaderSample {
         PicaConfiguration config = new PicaConfiguration.Builder().build();
         
         try (IPicaClient client = PicaComic.newApiClient(config)) {
-            // 2. 登录账户 (必须操作)
+            // 2. 登录账户；成功结果一定包含完整 profile 和稳定 ID
             System.out.println("Logging in...");
-            client.login("your_username_or_email", "your_password");
+            PicaUserInfo user = client.login("your_username_or_email", "your_password");
+            System.out.println("Signed in as: " + user.getId());
             
             // 3. 下载指定的本子
             downloadAlbumWithAllPhotos(client, "album_id_here");
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (PicaApiException e) {
+            System.err.println("Pica API failed: " + e.getReason());
         }
     }
 
@@ -225,6 +230,21 @@ PicaConfiguration config = new PicaConfiguration.Builder()
 代理只作用于该配置创建的 client，可能观察网络元数据；库不会因失败自动启用或切换代理。API host 会在首次 API 请求前进行 HEAD 探测，并按固定周期重新探测。图片请求是同步的空白 `GET`，不会继承 API 的 Cookie、Token、签名或请求体；配置的 `closeTimeoutMs` 控制 client 关闭时等待自有下载任务的时间。
 
 `fetchImageBytes` 是阻塞便利方法；需要取消时使用 `PicaImageRequest request = client.newImageRequest(image)`，在自己的 executor 中调用 `request.execute()`，并在页面销毁时调用 `request.cancel()`/`request.close()`。返回的 `byte[]` 在便利方法返回后归调用者所有，库不限制调用者长期保留它。
+
+API 也提供相同的单次同步句柄。需要取消带分页或多步骤的操作时，创建 `PicaRequest<T>` 并在自己的 executor 中调用 `execute()`；`cancel()` 会停止当前及后续 page、mirror 或登录 profile 请求。同步便利方法仍可直接使用：
+
+```java
+PicaRequest<PicaAlbum> request = client.newAlbumRequest("album_id_here");
+try {
+    PicaAlbum album = request.execute();
+} finally {
+    request.close();
+}
+```
+
+登录后可通过 `client.getSession()` 观察不含 token/cookie/password 的进程会话快照；`client.logout()` 是本地幂等操作，之后可以重新登录。最终 401 会把会话置为 `EXPIRED` 并清除凭据，403 不会被猜测为过期。
+
+章节缓存使用稳定 `chapterId`，不使用 `(albumId, order)` 作为 full photo 身份。需要权威数据时使用 `refreshAlbum` 或 `refreshPhoto`；章节插入、重排和删除会分别返回新的稳定身份、`STALE_RESOURCE` 或 `NOT_FOUND`，不会将旧章节的 pages 混入新章节。
 
 图片失败统一抛出 `ImageFetchException`，可通过 `getReason()` 判断 `INVALID_SOURCE`、`HTTP_STATUS`、`INVALID_CONTENT`、`TRUNCATED_BODY`、`TIMEOUT`、`CANCELLED` 或 `CLIENT_CLOSED` 等稳定原因。README 中的示例凭据仅为占位文本；本项目的测试只访问本地 TLS fixture，不访问真实服务。
 

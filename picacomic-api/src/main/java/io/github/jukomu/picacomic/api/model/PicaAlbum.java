@@ -1,6 +1,7 @@
 package io.github.jukomu.picacomic.api.model;
 
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -284,8 +285,9 @@ public record PicaAlbum(
      * @return 章节
      */
     public PicaPhoto getPhoto(int index) {
-        photos.sort(Comparator.comparingInt(PicaPhoto::getOrder));
-        return photos.get(index - 1);
+        List<PicaPhoto> ordered = new ArrayList<>(photos);
+        ordered.sort(Comparator.comparingInt(PicaPhoto::getOrder));
+        return ordered.get(index - 1);
     }
 
     /**

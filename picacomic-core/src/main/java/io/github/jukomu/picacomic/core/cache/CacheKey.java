@@ -10,15 +10,30 @@ import java.util.Objects;
  */
 public final class CacheKey {
     private final Class<?> type;
-    private final String id;
+    private final Object id;
 
-    private CacheKey(Class<?> type, String id) {
-        this.type = type;
-        this.id = id;
+    private CacheKey(Class<?> type, Object id) {
+        this.type = Objects.requireNonNull(type, "Cache key type cannot be null");
+        this.id = Objects.requireNonNull(id, "Cache key id cannot be null");
     }
 
     public static CacheKey of(Class<?> type, String id) {
         return new CacheKey(type, id);
+    }
+
+    /**
+     * Creates a key from a structured, value-based identity.
+     */
+    public static CacheKey of(Class<?> type, Object id) {
+        return new CacheKey(type, id);
+    }
+
+    public Class<?> type() {
+        return type;
+    }
+
+    public Object id() {
+        return id;
     }
 
     @Override

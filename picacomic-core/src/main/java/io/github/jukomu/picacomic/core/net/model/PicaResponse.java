@@ -1,8 +1,11 @@
 package io.github.jukomu.picacomic.core.net.model;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.reflect.TypeToken;
+import io.github.jukomu.picacomic.api.exception.ParseResponseException;
+import io.github.jukomu.picacomic.api.exception.PicaApiException;
 import io.github.jukomu.picacomic.api.exception.ResponseException;
 import io.github.jukomu.picacomic.core.util.JsonUtils;
 import okhttp3.Response;
@@ -12,6 +15,11 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -22,21 +30,20 @@ import java.util.zip.GZIPInputStream;
  * @Description: 通用哔咔响应类
  * @Project: PicaComic-Api-Java
  * @Date: 2025/10/31
+ *
+ * A detached API response decoder.
+ *
+ * <p>Successful endpoint data is decoded from bytes read before the OkHttp
+ * response is closed. Error classification only retains status, scalar
+ * provider code and Retry-After metadata; response text is never placed in an
+ * exception.</p>
  */
 public class PicaResponse {
 
-    // 原始OkHttp Response对象
     protected final Response rawResponse;
-    // 用于同步的锁对象
     private final Object contentLock = new Object();
-    // 使用volatile确保多线程可见性
     protected volatile byte[] cachedContent;
 
-    /**
-     * 构造函数
-     *
-     * @param rawResponse 原始OkHttp响应对象
-     */
     public PicaResponse(Response rawResponse) {
         if (rawResponse == null) {
             throw new IllegalArgumentException("Raw OkHttp Response cannot be null.");
@@ -44,131 +51,113 @@ public class PicaResponse {
         this.rawResponse = rawResponse;
     }
 
-    /**
-     * 转换构造函数，从一个已有的 PicaResponse 创建
-     *
-     * @param other 另一个 PicaResponse 实例
-     */
     public PicaResponse(PicaResponse other) {
-        Response rawResponse1 = other.getRawResponse();
-        if (rawResponse1 == null) {
+        if (other == null || other.rawResponse == null) {
             throw new IllegalArgumentException("Raw OkHttp Response cannot be null.");
         }
-        this.rawResponse = rawResponse1;
-        this.cachedContent = other.getContent(); // 复用已缓存的内容
+        this.rawResponse = other.rawResponse;
+        this.cachedContent = other.getContent();
     }
 
     /**
-     * 判断响应是否成功
-     * 除了HTTP状态码为200，还需要响应内容非空
-     *
-     * @return 如果成功返回 true
+     * Returns whether the final response has a non-empty body and a 2xx code.
      */
     public boolean isSuccess() {
-        // OkHttp's isSuccessful() checks 200-299 range
-        return rawResponse.isSuccessful() && getContent().length > 0;
-    }
-
-    /**
-     * 如果请求不成功，则抛出异常
-     *
-     * @throws ResponseException 如果请求不成功
-     */
-    public void requireSuccess() throws ResponseException {
-        if (isNotSuccess()) {
-            throw new ResponseException("Request failed with code: " + getHttpCode() + ", error message: " + getErrorMessage());
+        if (!rawResponse.isSuccessful()) {
+            return false;
+        }
+        try {
+            JsonObject json = parseJson(getContent());
+            return json != null && hasDataObject(json) && !isProviderFailure(json);
+        } catch (PicaApiException exception) {
+            return false;
         }
     }
 
     /**
-     * 获取错误消息
-     * 子类应覆盖此方法以提供更具体的错误信息
-     *
-     * @return 错误消息字符串
+     * Validates the HTTP status and the provider envelope.
      */
-    public String getErrorMessage() {
-        return getText();
+    public void requireSuccess() throws ResponseException {
+        if (!rawResponse.isSuccessful()) {
+            JsonObject errorEnvelope = parseJsonQuietly(getContentQuietly());
+            throw new ResponseException(
+                    PicaApiException.Reason.HTTP_STATUS,
+                    getHttpCode(),
+                    providerCode(errorEnvelope),
+                    retryAfter(),
+                    null);
+        }
+
+        JsonObject json = parseJson(getContent());
+        if (isProviderFailure(json)) {
+            throw new ResponseException(
+                    PicaApiException.Reason.PROVIDER,
+                    getHttpCode(),
+                    providerCode(json),
+                    retryAfter(),
+                    null);
+        }
+        if (json == null || !hasDataObject(json)) {
+            throw ParseResponseException.withHttpStatus(getHttpCode(), null);
+        }
     }
 
     /**
-     * 获取HTTP状态码
-     *
-     * @return HTTP状态码
+     * Returns a fixed diagnostic string without exposing provider text.
      */
+    public String getErrorMessage() {
+        return "Pica API response failed";
+    }
+
     public int getHttpCode() {
         return rawResponse.code();
     }
 
-    /**
-     * 判断请求是否不成功
-     *
-     * @return 如果不成功返回 true
-     */
     public boolean isNotSuccess() {
         return !isSuccess();
     }
 
     /**
-     * 获取响应文本内容
-     *
-     * @return 响应文本
+     * Returns detached response text for explicit decoder use. It is not used
+     * in public exception messages or logs.
      */
     public String getText() {
-        // 从缓存的字节数组中获取文本
-        byte[] content = getContent();
-        return new String(content, StandardCharsets.UTF_8);
+        return new String(getContent(), StandardCharsets.UTF_8);
     }
 
-    /**
-     * 获取响应的URL
-     *
-     * @return URL字符串
-     */
     public String getUrl() {
         return rawResponse.request().url().toString();
     }
 
-    /**
-     * 获取响应头
-     *
-     * @return 响应头Map
-     */
     public Map<String, List<String>> getHeaders() {
         return rawResponse.headers().toMultimap();
     }
 
-    /**
-     * 获取响应的原始字节内容
-     *
-     * @return 字节数组
-     */
     public byte[] getContent() {
-        // 实现一次性读取和缓存
         if (cachedContent == null) {
             synchronized (contentLock) {
-                // 双重检查锁定，防止多个线程同时读取
                 if (cachedContent == null) {
                     ResponseBody body = rawResponse.body();
                     if (body == null) {
                         cachedContent = new byte[0];
-                        return cachedContent;
-                    }
-                    try {
-                        byte[] rawBytes = body.bytes(); // 读取并关闭响应体
-
-                        // 检查是否需要GZIP解压
-                        if ("gzip".equalsIgnoreCase(rawResponse.header("Content-Encoding"))) {
-                            // 如果响应是GZIP编码，则解压
-                            cachedContent = decompressGzip(rawBytes);
-                        } else {
-                            // 否则直接使用原始字节
-                            cachedContent = rawBytes;
+                    } else {
+                        try {
+                            byte[] rawBytes = body.bytes();
+                            if ("gzip".equalsIgnoreCase(rawResponse.header("Content-Encoding"))) {
+                                try {
+                                    cachedContent = decompressGzip(rawBytes);
+                                } catch (IOException exception) {
+                                    throw ParseResponseException.withHttpStatus(getHttpCode(), exception);
+                                }
+                            } else {
+                                cachedContent = rawBytes;
+                            }
+                        } catch (IllegalStateException exception) {
+                            cachedContent = new byte[0];
+                        } catch (IOException exception) {
+                            throw new io.github.jukomu.picacomic.api.exception.NetworkException(
+                                    PicaApiException.Reason.NETWORK, exception);
                         }
-                    } catch (IllegalStateException e) {
-                        // 如果响应已被关闭，返回空内容
-                        cachedContent = new byte[0];
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
                     }
                 }
             }
@@ -176,34 +165,30 @@ public class PicaResponse {
         return cachedContent;
     }
 
-    /**
-     * 解压GZIP数据
-     */
+    private byte[] getContentQuietly() {
+        try {
+            return getContent();
+        } catch (PicaApiException exception) {
+            return new byte[0];
+        }
+    }
+
     private byte[] decompressGzip(byte[] compressedData) throws IOException {
         if (compressedData == null || compressedData.length == 0) {
             return new byte[0];
         }
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(compressedData);
-             GZIPInputStream gis = new GZIPInputStream(bis);
-             ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-
-            // 使用一个缓冲区和 while 循环来替代 transferTo 方法
-            // 这种方式在所有 Java 和 Android 版本上都兼容
-            byte[] buffer = new byte[8192]; // 创建一个 8KB 的缓冲区
-            int len;
-            while ((len = gis.read(buffer)) != -1) {
-                bos.write(buffer, 0, len);
+        try (ByteArrayInputStream input = new ByteArrayInputStream(compressedData);
+             GZIPInputStream gzip = new GZIPInputStream(input);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int length;
+            while ((length = gzip.read(buffer)) != -1) {
+                output.write(buffer, 0, length);
             }
-
-            return bos.toByteArray();
+            return output.toByteArray();
         }
     }
 
-    /**
-     * 获取原始URL
-     *
-     * @return 原始请求URL
-     */
     public String getOriginUrl() {
         Response current = rawResponse;
         String originUrl = current.request().url().toString();
@@ -214,79 +199,45 @@ public class PicaResponse {
         return originUrl;
     }
 
-    /**
-     * 获取重定向URL（如果存在Location头）
-     *
-     * @return 重定向URL字符串
-     */
     public String getRedirectUrl() {
         String location = rawResponse.header("Location");
         return location != null ? location : getUrl();
     }
 
-    /**
-     * 将响应解析为Map
-     *
-     * @return JSON Map
-     * @throws JsonParseException 如果解析失败
-     */
     public Map<String, Object> getMap() {
         String text = getText();
-        if (text == null || text.isEmpty()) {
+        if (text.isEmpty()) {
             return Collections.emptyMap();
         }
-        return JsonUtils.getGson().fromJson(text, new TypeToken<Map<String, Object>>() {
-        }.getType());
-    }
-
-    /**
-     * 将响应解析为JsonObject
-     *
-     * @return JsonObject
-     * @throws JsonParseException 如果解析失败
-     */
-    public JsonObject getJson() {
-        String text = getText();
-        if (text == null || text.isEmpty()) {
-            return null;
+        try {
+            return JsonUtils.getGson().fromJson(text, new TypeToken<Map<String, Object>>() {
+            }.getType());
+        } catch (JsonParseException exception) {
+            throw ParseResponseException.withHttpStatus(getHttpCode(), exception);
         }
-        return JsonUtils.toJsonObject(text);
     }
 
-    /**
-     * 获取数据
-     *
-     * @return 数据
-     */
+    public JsonObject getJson() {
+        return parseJson(getContent());
+    }
+
     public String getData() {
-        return JsonUtils.toJsonString(getJson().get("data").getAsJsonObject());
+        JsonObject json = getJson();
+        if (json == null || !hasDataObject(json)) {
+            throw ParseResponseException.withHttpStatus(getHttpCode(), null);
+        }
+        return JsonUtils.toJsonString(json.get("data").getAsJsonObject());
     }
 
-    /**
-     * 获取原始响应对象
-     *
-     * @param <T> 原始响应类型
-     * @return 原始响应对象
-     */
     @SuppressWarnings("unchecked")
     public <T> T getRawResponse() {
         return (T) rawResponse;
     }
 
-    /**
-     * 判断是否重定向
-     *
-     * @return 是否重定向
-     */
     public boolean isRedirect() {
         return getRedirectCount() > 0;
     }
 
-    /**
-     * 获取HTTP响应的重定向次数
-     *
-     * @return 重定向次数
-     */
     public int getRedirectCount() {
         int count = 0;
         Response current = rawResponse;
@@ -298,10 +249,103 @@ public class PicaResponse {
     }
 
     public String toString() {
-        return "CommonResponse{" +
+        return "PicaResponse{" +
                 "httpCode=" + getHttpCode() +
-                ", url='" + getUrl() + '\'' +
                 ", success=" + isSuccess() +
                 '}';
+    }
+
+    private JsonObject parseJson(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            throw ParseResponseException.withHttpStatus(getHttpCode(), null);
+        }
+        try {
+            return JsonUtils.toJsonObject(new String(bytes, StandardCharsets.UTF_8));
+        } catch (RuntimeException exception) {
+            throw ParseResponseException.withHttpStatus(getHttpCode(), exception);
+        }
+    }
+
+    private JsonObject parseJsonQuietly(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        try {
+            return JsonUtils.toJsonObject(new String(bytes, StandardCharsets.UTF_8));
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static boolean hasDataObject(JsonObject json) {
+        JsonElement data = json == null ? null : json.get("data");
+        return data != null && !data.isJsonNull() && data.isJsonObject();
+    }
+
+    private static boolean isProviderFailure(JsonObject json) {
+        if (json == null) {
+            return false;
+        }
+        JsonElement error = json.get("error");
+        if (error != null && !error.isJsonNull()) {
+            return true;
+        }
+        String code = scalarCode(json.get("code"));
+        if (code != null && !isSuccessCode(code)) {
+            return true;
+        }
+        JsonElement data = json.get("data");
+        if (data != null && data.isJsonObject()) {
+            JsonElement nestedError = data.getAsJsonObject().get("error");
+            return nestedError != null && !nestedError.isJsonNull();
+        }
+        return false;
+    }
+
+    private static boolean isSuccessCode(String code) {
+        return "0".equals(code) || "200".equals(code) || "OK".equalsIgnoreCase(code);
+    }
+
+    private static String providerCode(JsonObject json) {
+        if (json == null) {
+            return null;
+        }
+        String error = scalarCode(json.get("error"));
+        return error != null ? error : scalarCode(json.get("code"));
+    }
+
+    private static String scalarCode(JsonElement value) {
+        if (value == null || value.isJsonNull() || !value.isJsonPrimitive()
+                || value.getAsJsonPrimitive().isBoolean()) {
+            return null;
+        }
+        try {
+            String code = value.getAsString();
+            return code == null || code.isBlank() ? null : code;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private Duration retryAfter() {
+        String value = rawResponse.header("Retry-After");
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.chars().allMatch(Character::isDigit)) {
+            try {
+                return Duration.ofSeconds(Long.parseLong(trimmed));
+            } catch (ArithmeticException | NumberFormatException ignored) {
+                return null;
+            }
+        }
+        try {
+            Instant target = ZonedDateTime.parse(trimmed, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+            Duration delay = Duration.between(Instant.now(), target);
+            return delay.isNegative() ? Duration.ZERO : delay;
+        } catch (DateTimeParseException | ArithmeticException ignored) {
+            return null;
+        }
     }
 }
