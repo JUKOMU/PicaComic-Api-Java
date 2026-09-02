@@ -1,26 +1,23 @@
-package io.github.jukomu.picacomic.core;
+package io.github.jukomu.picacomic.core.net;
 
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 import io.github.jukomu.picacomic.core.constant.PicaConstants;
-import okhttp3.ConnectionPool;
-import okhttp3.CookieJar;
-import okhttp3.Dns;
-import okhttp3.Dispatcher;
-import okhttp3.JavaNetCookieJar;
-import okhttp3.OkHttpClient;
+import io.github.jukomu.picacomic.core.net.interceptor.RetryAndDomainRedirectInterceptor;
+import io.github.jukomu.picacomic.core.net.provider.PicaDomainManager;
+import okhttp3.*;
 
+import javax.net.SocketFactory;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.X509TrustManager;
-import javax.net.SocketFactory;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.time.Duration;
 import java.util.List;
 
 /**
- * 只负责组装 client-owned 网络资源。
+ * 只负责组装 client 自有的网络资源。
  */
-final class OkHttpBuilder {
+public final class OkHttpBuilder {
 
     private OkHttpBuilder() {
     }
@@ -28,7 +25,7 @@ final class OkHttpBuilder {
     /**
      * 生产环境构建一组完全隔离的 API/image OkHttp client。
      */
-    static HttpClientContext build(PicaConfiguration config) {
+    public static HttpClientContext build(PicaConfiguration config) {
         return build(config, null, null, null, null);
     }
 
@@ -45,11 +42,11 @@ final class OkHttpBuilder {
     /**
      * 额外允许本地 fixture 把逻辑 443 连接映射到非特权测试端口；生产 factory 不使用。
      */
-    static HttpClientContext buildForTesting(PicaConfiguration config,
-                                             Dns dns,
-                                             SSLSocketFactory sslSocketFactory,
-                                             X509TrustManager trustManager,
-                                             SocketFactory socketFactory) {
+    public static HttpClientContext buildForTesting(PicaConfiguration config,
+                                                    Dns dns,
+                                                    SSLSocketFactory sslSocketFactory,
+                                                    X509TrustManager trustManager,
+                                                    SocketFactory socketFactory) {
         return build(config, dns, sslSocketFactory, trustManager, socketFactory);
     }
 
@@ -126,7 +123,7 @@ final class OkHttpBuilder {
     /**
      * 只在 core 内部传递的资源组。生产 factory 不把它返回给库调用者。
      */
-    static final class HttpClientContext {
+    public static final class HttpClientContext {
         private final OkHttpClient apiClient;
         private final OkHttpClient imageClient;
         private final PicaDomainManager domainManager;
@@ -142,19 +139,19 @@ final class OkHttpBuilder {
             this.cookieManager = cookieManager;
         }
 
-        OkHttpClient getApiClient() {
+        public OkHttpClient getApiClient() {
             return apiClient;
         }
 
-        OkHttpClient getImageClient() {
+        public OkHttpClient getImageClient() {
             return imageClient;
         }
 
-        PicaDomainManager getDomainManager() {
+        public PicaDomainManager getDomainManager() {
             return domainManager;
         }
 
-        CookieManager getCookieManager() {
+        public CookieManager getCookieManager() {
             return cookieManager;
         }
     }

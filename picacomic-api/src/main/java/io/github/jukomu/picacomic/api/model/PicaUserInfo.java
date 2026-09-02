@@ -28,6 +28,7 @@ public record PicaUserInfo(
     /**
      * 创建一个仅包含用户名的部分填充的 PicaUserInfo 对象。
      */
+    @Deprecated
     public static PicaUserInfo partial(String name) {
         return new PicaUserInfo(null, name, null, null, null, null, null, false, 0, 1, null, null, null, false, 0);
     }
