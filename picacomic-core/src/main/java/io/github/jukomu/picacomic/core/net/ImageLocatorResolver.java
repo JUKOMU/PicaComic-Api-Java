@@ -1,4 +1,4 @@
-package io.github.jukomu.picacomic.core;
+package io.github.jukomu.picacomic.core.net;
 
 import io.github.jukomu.picacomic.api.exception.ImageFetchException;
 import io.github.jukomu.picacomic.api.model.PicaImage;
@@ -7,7 +7,7 @@ import okhttp3.HttpUrl;
 /**
  * 将图片模型中的 locator 解析为 OkHttp URL。
  */
-final class ImageLocatorResolver {
+public final class ImageLocatorResolver {
 
     /**
      * 解析图片的直接 URL 或 fileServer/path 组合。

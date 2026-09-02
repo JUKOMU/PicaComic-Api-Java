@@ -1,14 +1,9 @@
-package io.github.jukomu.picacomic.core;
+package io.github.jukomu.picacomic.core.net;
 
 import io.github.jukomu.picacomic.api.client.PicaImageRequest;
 import io.github.jukomu.picacomic.api.exception.ImageFetchException;
 import io.github.jukomu.picacomic.api.model.PicaImage;
-import okhttp3.Call;
-import okhttp3.HttpUrl;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
+import okhttp3.*;
 import okio.BufferedSource;
 
 import java.io.ByteArrayOutputStream;
@@ -17,7 +12,6 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,7 +22,7 @@ import java.util.function.Consumer;
 /**
  * 图片专用 OkHttp 请求句柄。它不继承 API client 的 request、Cookie 或拦截器。
  */
-final class OkHttpPicaImageRequest implements PicaImageRequest {
+public final class OkHttpPicaImageRequest implements PicaImageRequest {
 
     private static final int SCRATCH_BYTES = 8 * 1024;
 
@@ -47,15 +41,16 @@ final class OkHttpPicaImageRequest implements PicaImageRequest {
     private final AtomicBoolean closeRequested = new AtomicBoolean();
     private final AtomicBoolean deregistered = new AtomicBoolean();
     private final Object lifecycleLock = new Object();
+    private boolean executionAttempted;
 
-    OkHttpPicaImageRequest(PicaImage image,
-                           OkHttpClient imageClient,
-                           ImageLocatorResolver resolver,
-                           Semaphore readerSlots,
-                           BooleanSupplier clientClosed,
-                           Consumer<Call> registerCall,
-                           Consumer<Call> unregisterCall,
-                           Runnable onClosed) {
+    public OkHttpPicaImageRequest(PicaImage image,
+                                  OkHttpClient imageClient,
+                                  ImageLocatorResolver resolver,
+                                  Semaphore readerSlots,
+                                  BooleanSupplier clientClosed,
+                                  Consumer<Call> registerCall,
+                                  Consumer<Call> unregisterCall,
+                                  Runnable onClosed) {
         this.image = image;
         this.imageClient = Objects.requireNonNull(imageClient, "Image client cannot be null");
         this.resolver = Objects.requireNonNull(resolver, "Image resolver cannot be null");
@@ -69,8 +64,15 @@ final class OkHttpPicaImageRequest implements PicaImageRequest {
     @Override
     public byte[] execute() {
         synchronized (lifecycleLock) {
+            if (executionAttempted) {
+                throw new IllegalStateException("An image request can only be executed once");
+            }
+            executionAttempted = true;
             State observed = state.get();
             if (observed != State.NEW) {
+                if (clientClosed.getAsBoolean()) {
+                    termination.set(ImageFetchException.Reason.CLIENT_CLOSED);
+                }
                 ImageFetchException.Reason reason = termination.get();
                 if (reason != null) {
                     throw new ImageFetchException(reason);
@@ -321,7 +323,7 @@ final class OkHttpPicaImageRequest implements PicaImageRequest {
         }
     }
 
-    void closeFromClient() {
+    public void closeFromClient() {
         boolean notify = false;
         synchronized (lifecycleLock) {
             State current = state.get();

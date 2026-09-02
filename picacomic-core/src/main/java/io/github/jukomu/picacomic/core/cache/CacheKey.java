@@ -10,15 +10,51 @@ import java.util.Objects;
  */
 public final class CacheKey {
     private final Class<?> type;
-    private final String id;
+    private final Object id;
 
-    private CacheKey(Class<?> type, String id) {
-        this.type = type;
-        this.id = id;
+    private CacheKey(Class<?> type, Object id) {
+        this.type = Objects.requireNonNull(type, "Cache key type cannot be null");
+        this.id = Objects.requireNonNull(id, "Cache key id cannot be null");
     }
 
+    /**
+     * 使用字符串身份创建缓存键。
+     *
+     * @param type 缓存值类型
+     * @param id 字符串身份
+     * @return 新的缓存键
+     */
     public static CacheKey of(Class<?> type, String id) {
         return new CacheKey(type, id);
+    }
+
+    /**
+     * 使用结构化、按值比较的身份创建缓存键。
+     *
+     * @param type 缓存值类型
+     * @param id 结构化身份
+     * @return 新的缓存键
+     */
+    public static CacheKey of(Class<?> type, Object id) {
+        return new CacheKey(type, id);
+    }
+
+    /**
+     * 获取缓存值类型。
+     *
+     * @return 缓存值类型
+     */
+    public Class<?> type() {
+        return type;
+    }
+
+    /**
+     * 获取缓存项身份。
+     *
+     * @return 缓存项身份
+     */
+    public Object id() {
+        return id;
     }
 
     @Override

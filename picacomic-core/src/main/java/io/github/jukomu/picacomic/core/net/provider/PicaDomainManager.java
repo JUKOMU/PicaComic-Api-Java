@@ -1,21 +1,8 @@
-package io.github.jukomu.picacomic.core;
+package io.github.jukomu.picacomic.core.net.provider;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
@@ -23,7 +10,7 @@ import java.util.function.BooleanSupplier;
 /**
  * 管理一个 API client 的固定 host 集合、健康分数和可用性探测。
  */
-final class PicaDomainManager {
+public final class PicaDomainManager {
 
     private static final int DEAD_MARK = Integer.MAX_VALUE / 2;
 
@@ -39,7 +26,7 @@ final class PicaDomainManager {
     private volatile ScheduledExecutorService periodicProbe;
     private volatile boolean shutdown;
 
-    PicaDomainManager(List<String> domains) {
+    public PicaDomainManager(List<String> domains) {
         Objects.requireNonNull(domains, "Domains cannot be null");
         if (domains.isEmpty()) {
             throw new IllegalArgumentException("At least one API domain is required");
@@ -63,9 +50,11 @@ final class PicaDomainManager {
     }
 
     /**
-     * Installs the client-owned probe and invalidates the initial availability snapshot.
+     * 设置 client 自有的探测器，并使初始可用性快照失效。
+     *
+     * @param probe 用于探测 API host 的回调
      */
-    void setProbe(DomainProbe probe) {
+    public void setProbe(DomainProbe probe) {
         Objects.requireNonNull(probe, "Domain probe cannot be null");
         synchronized (lifecycleLock) {
             if (shutdown) {
@@ -78,9 +67,11 @@ final class PicaDomainManager {
     }
 
     /**
-     * Starts periodic checks for the configured host pool.
+     * 为配置的 host 池启动周期性探测。
+     *
+     * @param intervalMs 探测间隔，非正数表示不启动周期任务
      */
-    void startPeriodicProbe(long intervalMs) {
+    public void startPeriodicProbe(long intervalMs) {
         if (intervalMs <= 0) {
             return;
         }
@@ -100,7 +91,7 @@ final class PicaDomainManager {
                     probeDomains(current, () -> shutdown);
                     markInitialized();
                 } catch (RuntimeException ignored) {
-                    // Background probe failures do not escape to request callers.
+                    // 后台探测失败不能传播到请求调用方。
                     if (!shutdown) {
                         markInitialized();
                     }
@@ -112,9 +103,11 @@ final class PicaDomainManager {
     }
 
     /**
-     * Ensures that the first request observes a completed availability probe.
+     * 确保第一个请求看到已完成的可用性探测。
+     *
+     * @param cancelled 用于检查调用方是否已取消的回调
      */
-    void ensureInitialized(BooleanSupplier cancelled) {
+    public void ensureInitialized(BooleanSupplier cancelled) {
         Objects.requireNonNull(cancelled, "Cancellation check cannot be null");
         for (;;) {
             if (cancelled.getAsBoolean()) {
@@ -166,9 +159,11 @@ final class PicaDomainManager {
     }
 
     /**
-     * Probes every configured host immediately. A caller may use this to request a fresh snapshot.
+     * 立即探测所有已配置的 host，以便调用方获取新的可用性快照。
+     *
+     * @param probe 用于探测 API host 的回调
      */
-    void probeAllDomains(DomainProbe probe) {
+    public void probeAllDomains(DomainProbe probe) {
         Objects.requireNonNull(probe, "Domain probe cannot be null");
         if (shutdown || !probeRunning.compareAndSet(false, true)) {
             return;
@@ -188,7 +183,7 @@ final class PicaDomainManager {
     /**
      * 获取当前失败分数最低的 host。相同分数保持配置顺序。
      */
-    String getBestDomain() {
+    public String getBestDomain() {
         ensureInitialized(() -> false);
         return snapshotInPriorityOrder().get(0);
     }
@@ -196,7 +191,7 @@ final class PicaDomainManager {
     /**
      * 为一次逻辑请求生成不可变的 host 优先级快照。
      */
-    List<String> snapshotInPriorityOrder() {
+    public List<String> snapshotInPriorityOrder() {
         List<String> ordered = new ArrayList<>(domains);
         Map<String, Integer> scores = new LinkedHashMap<>();
         for (String domain : domains) {
@@ -207,25 +202,25 @@ final class PicaDomainManager {
         return Collections.unmodifiableList(ordered);
     }
 
-    boolean contains(String domain) {
+    public boolean contains(String domain) {
         return domains.contains(domain);
     }
 
-    void reportSuccess(String domain) {
+    public void reportSuccess(String domain) {
         AtomicInteger count = failureCounts.get(domain);
         if (count != null) {
             count.set(0);
         }
     }
 
-    void reportFailure(String domain) {
+    public void reportFailure(String domain) {
         AtomicInteger count = failureCounts.get(domain);
         if (count != null) {
             count.updateAndGet(value -> value >= DEAD_MARK ? DEAD_MARK : value + 1);
         }
     }
 
-    Map<String, Integer> getDomainStates() {
+    public Map<String, Integer> getDomainStates() {
         Map<String, Integer> states = new LinkedHashMap<>();
         for (String domain : domains) {
             states.put(domain, failureCounts.get(domain).get());
@@ -233,7 +228,7 @@ final class PicaDomainManager {
         return Collections.unmodifiableMap(states);
     }
 
-    void shutdown() {
+    public void shutdown() {
         ScheduledExecutorService scheduler;
         synchronized (lifecycleLock) {
             if (shutdown) {
@@ -282,7 +277,7 @@ final class PicaDomainManager {
                         anyReachable |= reachable[i];
                         break;
                     } catch (java.util.concurrent.TimeoutException ignored) {
-                        // Recheck cancellation while a network probe is in progress.
+                        // 网络探测进行期间持续检查取消状态。
                     } catch (InterruptedException exception) {
                         Thread.currentThread().interrupt();
                         throw new CancellationException("Domain probe interrupted");

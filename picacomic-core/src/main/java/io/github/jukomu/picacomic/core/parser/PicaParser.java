@@ -26,6 +26,7 @@ public class PicaParser {
      * 解析本子详情页的API JSON响应
      *
      * @param json API返回的JSON字符串
+     * @param photos 章节摘要或详情列表；摘要本子可以传入 {@code null}
      * @return 一个 PicaAlbum 对象
      */
     public static PicaAlbum parserAlbum(String json, List<PicaPhoto> photos) {
@@ -201,6 +202,16 @@ public class PicaParser {
         }
     }
 
+    /**
+     * 解析本子章节索引的 API JSON 响应。
+     *
+     * <p>返回数组的第一个元素是 {@code List<PicaPhoto>}，第二个元素是下一页页码，
+     * 没有下一页时为 {@code null}。</p>
+     *
+     * @param json API 返回的 JSON 字符串
+     * @param albumId 所属本子 ID
+     * @return 章节列表与下一页页码
+     */
     public static Object[] parserPhotoList(String json, String albumId) {
         try {
             JsonObject jsonObject = JsonUtils.toJsonObject(json);
@@ -249,6 +260,15 @@ public class PicaParser {
         }
     }
 
+    /**
+     * 解析章节图片页的 API JSON 响应。
+     *
+     * <p>返回数组的第一个元素是 {@code List<PicaImage>}，第二个元素是下一页页码，
+     * 没有下一页时为 {@code null}。</p>
+     *
+     * @param json API 返回的 JSON 字符串
+     * @return 图片列表与下一页页码
+     */
     public static Object[] parserImageList(String json) {
         try {
             JsonObject jsonObject = JsonUtils.toJsonObject(json);

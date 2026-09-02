@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Predicate;
 
 /**
  * @author JUKOMU
@@ -32,9 +33,9 @@ public final class CachePool<K, V> {
         }
     }
 
-    // 单位: Byte
+    // 单位：字节
     private final long capacity;
-    // 单位: Byte
+    // 单位：字节
     private long currentSize;
     private int minFreq;
     private final Map<K, Node<K, V>> cacheMap;
@@ -147,11 +148,51 @@ public final class CachePool<K, V> {
                 LinkedHashSet<Node<K, V>> set = freqMap.get(node.freq);
                 if (set != null) {
                     set.remove(node);
+                    if (set.isEmpty()) {
+                        freqMap.remove(node.freq);
+                    }
                 }
                 currentSize -= node.weight;
+                minFreq = freqMap.keySet().stream().min(Integer::compareTo).orElse(0);
                 logger.debug("Cache REMOVED for key: {}", key);
             } else {
                 logger.debug("Cache REMOVE FAILED (key not found) for key: {}", key);
+            }
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    /**
+     * 移除所有满足指定 key 条件的缓存项。
+     *
+     * @param predicate 缓存 key 筛选条件
+     */
+    public void removeIf(Predicate<? super K> predicate) {
+        if (predicate == null) {
+            throw new NullPointerException("Cache key predicate cannot be null");
+        }
+        writeLock.lock();
+        try {
+            cacheMap.entrySet().removeIf(entry -> {
+                if (!predicate.test(entry.getKey())) {
+                    return false;
+                }
+                Node<K, V> node = entry.getValue();
+                LinkedHashSet<Node<K, V>> set = freqMap.get(node.freq);
+                if (set != null) {
+                    set.remove(node);
+                    if (set.isEmpty()) {
+                        freqMap.remove(node.freq);
+                    }
+                }
+                currentSize -= node.weight;
+                return true;
+            });
+            if (cacheMap.isEmpty()) {
+                minFreq = 0;
+            } else {
+                minFreq = freqMap.keySet().stream().min(Integer::compareTo).orElse(0);
             }
         } finally {
             writeLock.unlock();

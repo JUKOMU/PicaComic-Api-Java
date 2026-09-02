@@ -1,6 +1,7 @@
-package io.github.jukomu.picacomic.core;
+package io.github.jukomu.picacomic.core.net.interceptor;
 
 import io.github.jukomu.picacomic.core.constant.PicaConstants;
+import io.github.jukomu.picacomic.core.net.provider.PicaDomainManager;
 import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
 import okhttp3.Request;
@@ -15,7 +16,7 @@ import java.util.concurrent.CancellationException;
 /**
  * API 专用的有界 host 重试拦截器。
  */
-final class RetryAndDomainRedirectInterceptor implements Interceptor {
+public final class RetryAndDomainRedirectInterceptor implements Interceptor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RetryAndDomainRedirectInterceptor.class);
 
@@ -26,7 +27,7 @@ final class RetryAndDomainRedirectInterceptor implements Interceptor {
      * @param maxRetries 首次尝试之后的额外尝试次数
      * @param domainManager 当前 client 的 API host 管理器
      */
-    RetryAndDomainRedirectInterceptor(int maxRetries, PicaDomainManager domainManager) {
+    public RetryAndDomainRedirectInterceptor(int maxRetries, PicaDomainManager domainManager) {
         if (maxRetries < 0) {
             throw new IllegalArgumentException("Max retries must be non-negative");
         }

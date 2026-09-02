@@ -47,7 +47,7 @@ Fetches and parses basic entity information from PicaComic.
 
 #### 2. Session Management Layer
 Manages authentication and session state for the PicaComic client.
-- [x] **User Login (`login`)**: Supports logging in with a username or email and password, completing Token credential acquisition and maintenance.
+- [x] **User Login (`login`)**: Completes sign-in and profile atomically in one logical request; the client becomes signed in only after receiving a complete profile with a stable user ID.
 
 #### 3. Smart Download Operations Layer (Convenience Operations)
 Built-in, highly flexible, and concurrent-supported downloading tools.
@@ -72,7 +72,7 @@ This project adopts a modular design, separating the **Public Interfaces (API)**
 
 This module defines the public contract of the library. It contains no third-party network library dependencies and can be integrated independently.
 
-* **Domain Models**: Provides a set of immutable data objects to describe core entities like `PicaAlbum` (Album), `PicaPhoto` (Chapter), `PicaImage` (Image), `PicaContentPage` (Paginated Content), and `PicaUserInfo` (User Info).
+* **Domain Models**: Provides record data objects for core entities like `PicaAlbum` (Album), `PicaPhoto` (Chapter), `PicaImage` (Image), `PicaContentPage` (Paginated Content), and `PicaUserInfo` (User Info). Public collections remain mutable; the client recursively copies them at cache and session boundaries.
 * **Client Interface (`IPicaClient`)**: Abstracts and unifies all business operations, including entity fetching (`getAlbum`, `getPhoto`), list querying (`search`, `getCategories`, `getFavorites`), leaderboard querying (`getLeaderboard`, `getKnightLeaderboard`), user sessions (`login`), and downloading (`downloadAlbum`, `downloadPhoto`, etc.).
 * **Strategy Interfaces**: Defines strategy interfaces like `IAlbumPathGenerator`, `IPhotoPathGenerator`, etc., allowing callers to inject custom logic to control external interactions such as file storage.
 
@@ -82,7 +82,8 @@ This module contains the specific implementation logic for all features, handlin
 
 * **Client implementation**:
     * **API Requests**: Encapsulates OkHttp to call the PicaComic mobile API for data interaction.
-    * **Session Management**: Manages user login states and Token credential maintenance.
+    * **Session Management**: Manages `SIGNED_OUT`, `AUTHENTICATING`, `SIGNED_IN`, and `EXPIRED` states. Credentials exist only in the current client process; passwords are not retained and sessions are never restored automatically.
+    * **Structured Errors**: API failures expose `PicaApiException.Reason`, the final HTTP status, provider code, and `Retry-After`; exception messages and causes never include response bodies, URLs, headers, or credentials.
 * **Network Processing**:
     * **API/image separation**: Each `IPicaClient` owns two OkHttp clients. The image client has no Cookie, token, signature, or API interceptor.
     * **Safe retries**: API requests select the best host from the configured pool and retry, within `retryTimes`, on I/O, `403`, or any `5xx` response. GET and POST use the same rules. API requests use OkHttp's default redirect behavior.
@@ -142,7 +143,10 @@ package io.github.jukomu.picacomic.sample;
 
 import io.github.jukomu.picacomic.api.client.DownloadResult;
 import io.github.jukomu.picacomic.api.client.IPicaClient;
+import io.github.jukomu.picacomic.api.client.PicaRequest;
+import io.github.jukomu.picacomic.api.exception.PicaApiException;
 import io.github.jukomu.picacomic.api.model.PicaAlbum;
+import io.github.jukomu.picacomic.api.model.PicaUserInfo;
 import io.github.jukomu.picacomic.core.PicaComic;
 import io.github.jukomu.picacomic.core.config.PicaConfiguration;
 
@@ -157,14 +161,15 @@ public class DownloaderSample {
         PicaConfiguration config = new PicaConfiguration.Builder().build();
         
         try (IPicaClient client = PicaComic.newApiClient(config)) {
-            // 2. Log in to the account (Required)
+            // 2. Log in; a successful result always has a complete profile and stable ID
             System.out.println("Logging in...");
-            client.login("your_username_or_email", "your_password");
+            PicaUserInfo user = client.login("your_username_or_email", "your_password");
+            System.out.println("Signed in as: " + user.getId());
             
             // 3. Download the specified album
             downloadAlbumWithAllPhotos(client, "album_id_here");
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (PicaApiException e) {
+            System.err.println("Pica API failed: " + e.getReason());
         }
     }
 
@@ -223,6 +228,21 @@ The default API host pool contains `picacomic.com`, `picaapi.go2778.com`, `picaa
 The proxy applies only to clients created from this configuration and may observe network metadata. The library never enables or switches to a proxy after a failure. API hosts are probed with HEAD before the first API request and periodically thereafter. Image requests are synchronous blank `GET` requests and never inherit API cookies, tokens, signatures, or request bodies; `closeTimeoutMs` controls how long client close waits for its own download tasks.
 
 `fetchImageBytes` is blocking. For cancellation, create `PicaImageRequest request = client.newImageRequest(image)`, call `request.execute()` from an executor owned by your application, and call `request.cancel()`/`request.close()` when the page is destroyed. The returned `byte[]` belongs to the caller after the convenience method returns; the library cannot limit how long the caller retains it.
+
+API operations expose the same single-use synchronous handle. To cancel a paginated or multi-step operation, create a `PicaRequest<T>` and call `execute()` from an executor owned by your application; `cancel()` stops the current and subsequent page, mirror, or login-profile requests. Synchronous convenience methods remain available:
+
+```java
+PicaRequest<PicaAlbum> request = client.newAlbumRequest("album_id_here");
+try {
+    PicaAlbum album = request.execute();
+} finally {
+    request.close();
+}
+```
+
+After login, `client.getSession()` returns a process-local snapshot containing no token, cookie, or password. `client.logout()` is local and idempotent, and the client can log in again afterward. A final 401 changes the session to `EXPIRED` and clears credentials; a 403 is not treated as expiry.
+
+Chapter caches use stable `chapterId` identities rather than `(albumId, order)` for full photos. Use `refreshAlbum` or `refreshPhoto` when authoritative data is needed; insertion, reorder, and deletion produce the new stable identity, `STALE_RESOURCE`, or `NOT_FOUND` as appropriate without mixing pages from different chapters.
 
 Image failures are reported as `ImageFetchException`; use `getReason()` for stable values such as `INVALID_SOURCE`, `HTTP_STATUS`, `INVALID_CONTENT`, `TRUNCATED_BODY`, `TIMEOUT`, `CANCELLED`, and `CLIENT_CLOSED`. Credentials in the examples are placeholders only; tests use local TLS fixtures and never access the real service.
 
