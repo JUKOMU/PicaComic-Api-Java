@@ -4,28 +4,38 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * A structured failure from one Pica API operation.
+ * 一次 Pica API 操作返回的结构化失败。
  *
- * <p>The exception deliberately exposes only stable transport metadata. The
- * response body, request URL, headers and credentials are never retained or
- * interpolated into its message.</p>
+ * <p>异常只公开稳定的传输元数据，不保存也不将响应体、请求 URL、headers 或凭据
+ * 插入异常消息。</p>
  */
 public class PicaApiException extends PicaComicException {
 
     /**
-     * Stable machine-readable failure categories for API operations.
+     * API 操作可供调用方判断的稳定失败原因。
      */
     public enum Reason {
+        /** HTTP 响应状态表示请求失败。 */
         HTTP_STATUS,
+        /** 服务端业务 envelope 报告失败。 */
         PROVIDER,
+        /** 网络传输失败。 */
         NETWORK,
+        /** 响应内容无法解析。 */
         PARSE,
+        /** 请求被调用方取消。 */
         CANCELLED,
+        /** 请求因传输超时结束。 */
         TIMEOUT,
+        /** 所属 client 已关闭。 */
         CLIENT_CLOSED,
+        /** 操作需要已登录会话。 */
         SESSION_REQUIRED,
+        /** 请求的资源不存在。 */
         NOT_FOUND,
+        /** 资源定位信息已过期。 */
         STALE_RESOURCE,
+        /** 未归类的 client 内部失败。 */
         INTERNAL
     }
 
@@ -34,18 +44,43 @@ public class PicaApiException extends PicaComicException {
     private final String providerCode;
     private final Duration retryAfter;
 
+    /**
+     * 使用失败原因创建异常。
+     *
+     * @param reason 稳定失败原因
+     */
     public PicaApiException(Reason reason) {
         this(reason, null, null, null, null);
     }
 
+    /**
+     * 使用失败原因和脱敏 cause 创建异常。
+     *
+     * @param reason 稳定失败原因
+     * @param cause 原始失败；对外只保留安全的 cause 描述
+     */
     public PicaApiException(Reason reason, Throwable cause) {
         this(reason, null, null, null, cause);
     }
 
+    /**
+     * 使用 HTTP 状态创建异常。
+     *
+     * @param reason 稳定失败原因
+     * @param httpStatus 最终 HTTP 状态码
+     */
     public PicaApiException(Reason reason, Integer httpStatus) {
         this(reason, httpStatus, null, null, null);
     }
 
+    /**
+     * 使用结构化响应元数据创建异常。
+     *
+     * @param reason 稳定失败原因
+     * @param httpStatus 最终 HTTP 状态码
+     * @param providerCode 服务端错误代码
+     * @param retryAfter 服务端提供的有效重试等待时间
+     */
     public PicaApiException(Reason reason,
                             Integer httpStatus,
                             String providerCode,
@@ -53,6 +88,15 @@ public class PicaApiException extends PicaComicException {
         this(reason, httpStatus, providerCode, retryAfter, null);
     }
 
+    /**
+     * 使用结构化响应元数据和脱敏 cause 创建异常。
+     *
+     * @param reason 稳定失败原因
+     * @param httpStatus 最终 HTTP 状态码
+     * @param providerCode 服务端错误代码
+     * @param retryAfter 服务端提供的有效重试等待时间
+     * @param cause 原始失败；不会把敏感响应内容暴露给调用方
+     */
     public PicaApiException(Reason reason,
                             Integer httpStatus,
                             String providerCode,
@@ -78,33 +122,47 @@ public class PicaApiException extends PicaComicException {
         this.retryAfter = retryAfter;
     }
 
+    /**
+     * 获取稳定失败原因。
+     *
+     * @return 失败原因
+     */
     public Reason getReason() {
         return reason;
     }
 
     /**
-     * The final HTTP response status, or {@code null} when no response exists.
+     * 获取最终 HTTP 响应状态码；没有响应时返回 {@code null}。
+     *
+     * @return HTTP 状态码
      */
     public Integer getHttpStatus() {
         return httpStatus;
     }
 
     /**
-     * A scalar provider code from a known error envelope, when available.
+     * 获取已知错误 envelope 中的标量服务端错误代码（如果存在）。
+     *
+     * @return 服务端错误代码
      */
     public String getProviderCode() {
         return providerCode;
     }
 
     /**
-     * The final response's valid Retry-After value, when available.
+     * 获取最终响应中的有效 Retry-After 值（如果存在）。
+     *
+     * @return 重试等待时间
      */
     public Duration getRetryAfter() {
         return retryAfter;
     }
 
     /**
-     * Reclassifies a failure without retaining a response body or URL.
+     * 在不保留响应体或 URL 的前提下重新标记失败原因。
+     *
+     * @param replacement 新的失败原因
+     * @return 使用新原因的异常；如果原因未变化则返回当前实例
      */
     public PicaApiException withReason(Reason replacement) {
         Objects.requireNonNull(replacement, "Replacement reason cannot be null");

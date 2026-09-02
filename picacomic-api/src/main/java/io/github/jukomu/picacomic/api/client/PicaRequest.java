@@ -1,38 +1,36 @@
 package io.github.jukomu.picacomic.api.client;
 
 /**
- * A synchronous, single-use handle for one logical API operation.
+ * 一个逻辑 API 操作的同步、单次使用句柄。
  *
- * <p>The handle does not create a library-owned worker thread. {@link #execute()}
- * performs the operation on the calling thread, while {@link #cancel()} may be
- * called from another thread to cancel the current and any future sub-requests
- * belonging to this operation.</p>
+ * <p>创建句柄不会启动库自有的工作线程。{@link #execute()} 在调用线程执行操作，
+ * 其他线程可以调用 {@link #cancel()} 取消当前操作及其后续子请求。</p>
  *
- * @param <T> operation result type
+ * @param <T> 操作结果类型
  */
 public interface PicaRequest<T> extends AutoCloseable {
 
     /**
-     * Executes this operation once on the calling thread.
+     * 在调用线程执行一次操作。
      *
-     * @return operation result
+     * @return 操作结果
      */
     T execute();
 
     /**
-     * Cancels this operation. The method is thread-safe and idempotent.
+     * 取消此操作。该方法线程安全且幂等。
      */
     void cancel();
 
     /**
-     * Indicates whether this handle was cancelled explicitly or by its client.
+     * 判断句柄是否已被调用方或所属 client 取消。
      *
-     * @return whether cancellation was requested
+     * @return 是否已请求取消
      */
     boolean isCancelled();
 
     /**
-     * Cancels unfinished work and releases handle-owned state.
+     * 取消未完成的工作并释放句柄持有的状态。
      */
     @Override
     void close();

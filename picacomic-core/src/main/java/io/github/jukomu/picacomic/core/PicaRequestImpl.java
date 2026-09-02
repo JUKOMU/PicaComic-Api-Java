@@ -12,12 +12,21 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 /**
- * Client-owned lifecycle for one logical synchronous operation.
+ * 管理一个逻辑同步操作的 client 内部请求生命周期。
+ *
+ * <p>请求只允许执行一次，并将取消、当前网络调用、终态通知及资源释放统一到
+ * 同一个生命周期状态机中。</p>
  */
 final class PicaRequestImpl<T> implements PicaRequest<T> {
 
     @FunctionalInterface
     interface Operation<T> {
+        /**
+         * 执行请求对应的逻辑操作。
+         *
+         * @param request 当前请求生命周期对象
+         * @return 操作结果
+         */
         T run(PicaRequestImpl<T> request);
     }
 
@@ -102,7 +111,7 @@ final class PicaRequestImpl<T> implements PicaRequest<T> {
     }
 
     /**
-     * Checks cancellation at each logical request boundary.
+     * 在每个逻辑请求边界检查 client 关闭和请求取消状态。
      */
     void checkBeforeWork() {
         if (clientClosed.getAsBoolean()) {
@@ -115,7 +124,10 @@ final class PicaRequestImpl<T> implements PicaRequest<T> {
     }
 
     /**
-     * Returns the operation's current cancellation reason for transport I/O.
+     * 获取传输 I/O 当前应使用的取消原因。
+     *
+     * @param exception 触发判断的底层 I/O 异常
+     * @return 按请求状态归类后的 API 异常
      */
     PicaApiException failureForIOException(IOException exception) {
         if (clientClosed.getAsBoolean()) {
@@ -219,7 +231,7 @@ final class PicaRequestImpl<T> implements PicaRequest<T> {
             try {
                 signalClientClosed();
             } catch (PicaApiException ignored) {
-                // The state is now observable through the termination field.
+                // 终止原因已写入 termination，供后续状态判断使用。
             }
         }
         PicaApiException.Reason reason = termination.get();
@@ -259,7 +271,7 @@ final class PicaRequestImpl<T> implements PicaRequest<T> {
             try {
                 onTerminalFailure.accept(effective);
             } catch (RuntimeException ignored) {
-                // A lifecycle cleanup callback must not replace the request failure.
+                // 生命周期清理回调不能覆盖请求本身的失败结果。
             }
         }
         return effective;

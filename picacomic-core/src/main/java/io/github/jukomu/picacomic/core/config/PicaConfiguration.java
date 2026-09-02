@@ -18,7 +18,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 /**
- * 创建 client 所需的不可变 value snapshot。
+ * 创建 client 所需的不可变配置快照。
  *
  * <p>运行时状态（Cookie、缓存、域名健康度和关闭状态）不属于配置，
  * 因而同一个配置可以安全地创建多个相互隔离的 client。</p>
@@ -60,6 +60,8 @@ public final class PicaConfiguration {
 
     /**
      * 获取调用者显式提供的 API host 快照。空列表表示使用 core 的默认 API hosts。
+     *
+     * @return API host 的不可修改列表
      */
     public List<String> getDomains() {
         return domains;
@@ -67,6 +69,8 @@ public final class PicaConfiguration {
 
     /**
      * 获取调用者显式配置的传输代理。库不会在失败时自行切换代理。
+     *
+     * @return 传输代理；未配置时为 {@code null}
      */
     public Proxy getProxy() {
         return proxy;
@@ -78,6 +82,8 @@ public final class PicaConfiguration {
 
     /**
      * 首次请求之后允许的额外 GET/HEAD 尝试次数。
+     *
+     * @return 额外尝试次数
      */
     public int getRetryTimes() {
         return retryTimes;
@@ -85,6 +91,8 @@ public final class PicaConfiguration {
 
     /**
      * 获取 API host 周期探测间隔；零值表示不启动周期探测。
+     *
+     * @return 探测间隔，单位为毫秒
      */
     public long getDomainProbeIntervalMs() {
         return domainProbeIntervalMs;
@@ -92,13 +100,17 @@ public final class PicaConfiguration {
 
     /**
      * 获取单个 API host 探测的网络超时。
+     *
+     * @return 探测超时，单位为毫秒
      */
     public long getDomainProbeTimeoutMs() {
         return domainProbeTimeoutMs;
     }
 
     /**
-     * 获取图片 response body 的读取超时。
+     * 获取图片响应体的读取超时。
+     *
+     * @return 图片读取超时
      */
     public Duration getImageTimeout() {
         return imageTimeout;
@@ -106,6 +118,8 @@ public final class PicaConfiguration {
 
     /**
      * 获取 client 关闭时等待自有批量任务的最长时间。
+     *
+     * @return 关闭等待时间，单位为毫秒
      */
     public long getCloseTimeoutMs() {
         return closeTimeoutMs;
@@ -113,27 +127,54 @@ public final class PicaConfiguration {
 
     /**
      * 外部下载 executor。该 executor 的生命周期始终由调用者负责。
+     *
+     * @return 外部 executor；未配置时为 {@code null}
      */
     public ExecutorService getExecutor() {
         return executor;
     }
 
+    /**
+     * 获取 client 自有下载线程池的大小。
+     *
+     * @return 下载线程数
+     */
     public int getDownloadThreadPoolSize() {
         return downloadThreadPoolSize;
     }
 
+    /**
+     * 获取内存缓存容量。
+     *
+     * @return 缓存容量，单位为字节
+     */
     public int getCacheSize() {
         return cacheSize;
     }
 
+    /**
+     * 获取同时处理的章节数量。
+     *
+     * @return 并发章节数
+     */
     public int getConcurrentPhotoDownloads() {
         return concurrentPhotoDownloads;
     }
 
+    /**
+     * 获取同时读取图片的数量。
+     *
+     * @return 并发图片数
+     */
     public int getConcurrentImageDownloads() {
         return concurrentImageDownloads;
     }
 
+    /**
+     * 获取 API 请求使用的图片质量参数。
+     *
+     * @return 图片质量
+     */
     public ImageQuality getImageQuality() {
         return imageQuality;
     }
@@ -157,76 +198,168 @@ public final class PicaConfiguration {
         private int concurrentImageDownloads = 20;
         private ImageQuality imageQuality = ImageQuality.MEDIUM;
 
+        /**
+         * 设置 API host 列表。空列表表示使用 core 默认 host。
+         *
+         * @param domains API host 列表
+         * @return 当前 builder
+         */
         public Builder domains(List<String> domains) {
             this.domains = new ArrayList<>(Objects.requireNonNull(domains, "Domains cannot be null"));
             return this;
         }
 
+        /**
+         * 设置显式 HTTP 代理。
+         *
+         * @param host 代理 host
+         * @param port 代理端口
+         * @return 当前 builder
+         */
         public Builder proxy(String host, int port) {
             this.proxy = createProxy(host, port);
             return this;
         }
 
+        /**
+         * 设置 API 请求的连接、读、写和调用总超时。
+         *
+         * @param timeout 请求超时
+         * @return 当前 builder
+         */
         public Builder timeout(Duration timeout) {
             this.timeout = validateTimeout(timeout);
             return this;
         }
 
+        /**
+         * 设置首次请求之后允许的额外 GET/HEAD 尝试次数。
+         *
+         * @param retryTimes 额外尝试次数
+         * @return 当前 builder
+         */
         public Builder retryTimes(int retryTimes) {
             this.retryTimes = validateNonNegative(retryTimes, "Retry times");
             return this;
         }
 
+        /**
+         * 设置 API host 周期探测间隔。
+         *
+         * @param intervalMs 探测间隔，单位为毫秒；非正数表示不启动周期探测
+         * @return 当前 builder
+         */
         public Builder domainProbeIntervalMs(long intervalMs) {
             this.domainProbeIntervalMs = validateNonNegative(intervalMs, "Domain probe interval");
             return this;
         }
 
+        /**
+         * 设置单个 API host 探测超时。
+         *
+         * @param timeoutMs 探测超时，单位为毫秒
+         * @return 当前 builder
+         */
         public Builder domainProbeTimeoutMs(long timeoutMs) {
             this.domainProbeTimeoutMs = validatePositiveLong(timeoutMs, "Domain probe timeout");
             return this;
         }
 
+        /**
+         * 设置图片响应体读取超时。
+         *
+         * @param imageTimeout 图片读取超时
+         * @return 当前 builder
+         */
         public Builder imageTimeout(Duration imageTimeout) {
             this.imageTimeout = validateTimeout(imageTimeout);
             return this;
         }
 
+        /**
+         * 设置 client 关闭时等待自有批量任务的最长时间。
+         *
+         * @param timeoutMs 关闭等待时间，单位为毫秒
+         * @return 当前 builder
+         */
         public Builder closeTimeoutMs(long timeoutMs) {
             this.closeTimeoutMs = validateNonNegative(timeoutMs, "Close timeout");
             return this;
         }
 
+        /**
+         * 设置 client 自有下载线程池大小。
+         *
+         * @param size 线程数
+         * @return 当前 builder
+         */
         public Builder downloadThreadPoolSize(int size) {
             this.downloadThreadPoolSize = validatePositive(size, "Download thread pool size");
             return this;
         }
 
+        /**
+         * 注入外部下载 executor。client 关闭时不会关闭它。
+         *
+         * @param executor 外部 executor；传入 {@code null} 时由 client 创建自有线程池
+         * @return 当前 builder
+         */
         public Builder executor(ExecutorService executor) {
             this.executor = executor;
             return this;
         }
 
+        /**
+         * 设置内存缓存容量。
+         *
+         * @param size 缓存容量，单位为字节
+         * @return 当前 builder
+         */
         public Builder cacheSize(int size) {
             this.cacheSize = validateNonNegative(size, "Cache size");
             return this;
         }
 
+        /**
+         * 设置同时处理的章节数量。
+         *
+         * @param size 并发章节数
+         * @return 当前 builder
+         */
         public Builder concurrentPhotoDownloads(int size) {
             this.concurrentPhotoDownloads = validatePositive(size, "Concurrent photo downloads");
             return this;
         }
 
+        /**
+         * 设置同时读取图片的数量。
+         *
+         * @param size 并发图片数
+         * @return 当前 builder
+         */
         public Builder concurrentImageDownloads(int size) {
             this.concurrentImageDownloads = validatePositive(size, "Concurrent image downloads");
             return this;
         }
 
+        /**
+         * 设置 API 请求使用的图片质量参数。
+         *
+         * @param imageQuality 图片质量
+         * @return 当前 builder
+         */
         public Builder imageQuality(ImageQuality imageQuality) {
             this.imageQuality = Objects.requireNonNull(imageQuality, "Image quality cannot be null");
             return this;
         }
 
+        /**
+         * 从 properties 流加载支持的配置项。
+         *
+         * @param inputStream properties 输入流
+         * @return 当前 builder
+         * @throws IOException 读取输入流失败时抛出
+         */
         public Builder loadFromProperties(InputStream inputStream) throws IOException {
             Properties props = new Properties();
             props.load(Objects.requireNonNull(inputStream, "Input stream cannot be null"));
@@ -261,6 +394,11 @@ public final class PicaConfiguration {
             return this;
         }
 
+        /**
+         * 创建并校验不可变配置快照。
+         *
+         * @return 新配置
+         */
         public PicaConfiguration build() {
             return new PicaConfiguration(this);
         }
@@ -268,6 +406,10 @@ public final class PicaConfiguration {
 
     /**
      * 用于 core 对调用者配置和默认配置执行相同的 DNS host 语法检查。
+     *
+     * @param raw 原始 host 字符串
+     * @return 规范化后的 host
+     * @throws IllegalArgumentException host 语法不合法时抛出
      */
     public static String normalizeDomain(String raw) {
         if (raw == null || raw.isBlank()) {

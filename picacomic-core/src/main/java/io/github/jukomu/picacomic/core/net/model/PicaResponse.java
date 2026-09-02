@@ -31,12 +31,10 @@ import java.util.zip.GZIPInputStream;
  * @Project: PicaComic-Api-Java
  * @Date: 2025/10/31
  *
- * A detached API response decoder.
+ * 脱离 OkHttp 生命周期的 API 响应解码器。
  *
- * <p>Successful endpoint data is decoded from bytes read before the OkHttp
- * response is closed. Error classification only retains status, scalar
- * provider code and Retry-After metadata; response text is never placed in an
- * exception.</p>
+ * <p>响应关闭前读取的字节会被用于后续 endpoint 解码。错误分类只保留状态码、
+ * 标量服务端错误代码和 Retry-After 元数据，响应正文不会写入异常。</p>
  */
 public class PicaResponse {
 
@@ -44,6 +42,11 @@ public class PicaResponse {
     private final Object contentLock = new Object();
     protected volatile byte[] cachedContent;
 
+    /**
+     * 从 OkHttp 响应创建解码器。
+     *
+     * @param rawResponse 原始 OkHttp 响应
+     */
     public PicaResponse(Response rawResponse) {
         if (rawResponse == null) {
             throw new IllegalArgumentException("Raw OkHttp Response cannot be null.");
@@ -51,6 +54,11 @@ public class PicaResponse {
         this.rawResponse = rawResponse;
     }
 
+    /**
+     * 创建一个复用原始响应和已读取内容的包装器。
+     *
+     * @param other 需要复制的响应包装器
+     */
     public PicaResponse(PicaResponse other) {
         if (other == null || other.rawResponse == null) {
             throw new IllegalArgumentException("Raw OkHttp Response cannot be null.");
@@ -60,7 +68,9 @@ public class PicaResponse {
     }
 
     /**
-     * Returns whether the final response has a non-empty body and a 2xx code.
+     * 判断最终响应是否为 2xx 且包含有效的成功 envelope。
+     *
+     * @return 响应是否成功
      */
     public boolean isSuccess() {
         if (!rawResponse.isSuccessful()) {
@@ -75,7 +85,10 @@ public class PicaResponse {
     }
 
     /**
-     * Validates the HTTP status and the provider envelope.
+     * 校验 HTTP 状态码和服务端 envelope。
+     *
+     * @throws ResponseException 响应状态码或服务端业务结果表示失败时抛出
+     * @throws PicaApiException 响应正文无法解析时抛出
      */
     public void requireSuccess() throws ResponseException {
         if (!rawResponse.isSuccessful()) {
@@ -103,36 +116,68 @@ public class PicaResponse {
     }
 
     /**
-     * Returns a fixed diagnostic string without exposing provider text.
+     * 返回不暴露服务端文本的固定诊断信息。
+     *
+     * @return 安全的响应失败描述
      */
     public String getErrorMessage() {
         return "Pica API response failed";
     }
 
+    /**
+     * 获取最终 HTTP 状态码。
+     *
+     * @return HTTP 状态码
+     */
     public int getHttpCode() {
         return rawResponse.code();
     }
 
+    /**
+     * 判断响应是否未通过成功校验。
+     *
+     * @return 响应是否失败
+     */
     public boolean isNotSuccess() {
         return !isSuccess();
     }
 
     /**
-     * Returns detached response text for explicit decoder use. It is not used
-     * in public exception messages or logs.
+     * 获取脱离响应生命周期的正文文本，供显式解码使用。
+     *
+     * <p>该文本不会用于公开异常消息或日志。</p>
+     *
+     * @return UTF-8 解码后的响应正文
      */
     public String getText() {
         return new String(getContent(), StandardCharsets.UTF_8);
     }
 
+    /**
+     * 获取最终请求 URL。
+     *
+     * @return 最终请求 URL
+     */
     public String getUrl() {
         return rawResponse.request().url().toString();
     }
 
+    /**
+     * 获取最终响应 headers 的多值映射。
+     *
+     * @return 响应 headers
+     */
     public Map<String, List<String>> getHeaders() {
         return rawResponse.headers().toMultimap();
     }
 
+    /**
+     * 获取响应正文的字节快照。
+     *
+     * <p>首次读取后会复用已缓存的正文；gzip 正文会先解压。</p>
+     *
+     * @return 响应正文字节
+     */
     public byte[] getContent() {
         if (cachedContent == null) {
             synchronized (contentLock) {
@@ -189,6 +234,11 @@ public class PicaResponse {
         }
     }
 
+    /**
+     * 获取重定向链最初的请求 URL。
+     *
+     * @return 重定向链起始 URL
+     */
     public String getOriginUrl() {
         Response current = rawResponse;
         String originUrl = current.request().url().toString();
@@ -199,11 +249,22 @@ public class PicaResponse {
         return originUrl;
     }
 
+    /**
+     * 获取响应的 Location 值；没有 Location 时返回最终请求 URL。
+     *
+     * @return 重定向目标或最终请求 URL
+     */
     public String getRedirectUrl() {
         String location = rawResponse.header("Location");
         return location != null ? location : getUrl();
     }
 
+    /**
+     * 将正文解析为 JSON 对象映射。
+     *
+     * @return JSON 对象映射；空正文返回空映射
+     * @throws ParseResponseException 正文不是有效 JSON 时抛出
+     */
     public Map<String, Object> getMap() {
         String text = getText();
         if (text.isEmpty()) {
@@ -217,10 +278,22 @@ public class PicaResponse {
         }
     }
 
+    /**
+     * 将正文解析为 JSON 对象。
+     *
+     * @return JSON 对象
+     * @throws ParseResponseException 正文不是有效 JSON 时抛出
+     */
     public JsonObject getJson() {
         return parseJson(getContent());
     }
 
+    /**
+     * 获取成功 envelope 中的 data 对象 JSON 文本。
+     *
+     * @return data 对象的 JSON 文本
+     * @throws ParseResponseException 响应缺少对象形式的 data 时抛出
+     */
     public String getData() {
         JsonObject json = getJson();
         if (json == null || !hasDataObject(json)) {
@@ -229,15 +302,31 @@ public class PicaResponse {
         return JsonUtils.toJsonString(json.get("data").getAsJsonObject());
     }
 
+    /**
+     * 获取原始 OkHttp 响应。
+     *
+     * @param <T> 调用方期望的响应类型
+     * @return 原始响应对象
+     */
     @SuppressWarnings("unchecked")
     public <T> T getRawResponse() {
         return (T) rawResponse;
     }
 
+    /**
+     * 判断响应是否经过至少一次重定向。
+     *
+     * @return 是否发生重定向
+     */
     public boolean isRedirect() {
         return getRedirectCount() > 0;
     }
 
+    /**
+     * 获取响应链中的重定向次数。
+     *
+     * @return 重定向次数
+     */
     public int getRedirectCount() {
         int count = 0;
         Response current = rawResponse;
@@ -248,6 +337,11 @@ public class PicaResponse {
         return count;
     }
 
+    /**
+     * 返回包含状态码和成功标记的安全摘要。
+     *
+     * @return 响应摘要
+     */
     public String toString() {
         return "PicaResponse{" +
                 "httpCode=" + getHttpCode() +

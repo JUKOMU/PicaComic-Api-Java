@@ -91,7 +91,10 @@ import static io.github.jukomu.picacomic.core.parser.PicaParser.parserPhotoList;
 import static io.github.jukomu.picacomic.core.parser.PicaParser.parserUserInfo;
 
 /**
- * Package-private implementation of the public Pica client contract.
+ * Pica 公开 client 契约的包内实现。
+ *
+ * <p>该实现负责协调 API、图片请求、会话状态、缓存和下载资源；对外只通过
+ * {@link IPicaClient} 暴露能力。</p>
  */
 final class DefaultPicaClient implements IPicaClient {
 
@@ -100,15 +103,35 @@ final class DefaultPicaClient implements IPicaClient {
 
     @FunctionalInterface
     interface ImageFileWriter {
+        /**
+         * 将已下载的图片字节写入临时文件。
+         *
+         * @param path 临时文件路径
+         * @param bytes 图片字节
+         * @throws IOException 写入失败时抛出
+         */
         void write(Path path, byte[] bytes) throws IOException;
     }
 
     @FunctionalInterface
     interface ImageFileMover {
+        /**
+         * 将临时文件移动到最终目标路径。
+         *
+         * @param temporary 临时文件路径
+         * @param target 最终文件路径
+         * @throws IOException 移动失败时抛出
+         */
         void move(Path temporary, Path target) throws IOException;
     }
 
-    /** Package-private so the request lifecycle can pass transport metadata without a public type. */
+    /**
+     * 请求生命周期传递的认证快照；该类型不属于公开 API。
+     *
+     * @param token 当前请求使用的 token
+     * @param generation 会话代数
+     * @param authenticated 请求是否使用已认证会话
+     */
     record AuthContext(String token, long generation, boolean authenticated) {
     }
 
@@ -134,12 +157,21 @@ final class DefaultPicaClient implements IPicaClient {
         private final AtomicReference<LoginCommit> committed = new AtomicReference<>();
     }
 
+    /**
+     * 一页章节图片及其稳定 ID、下一页页码。
+     */
     private record PageData(String chapterId, List<PicaImage> images, Integer nextPage) {
     }
 
+    /**
+     * 完整章节页集合及其稳定章节 ID。
+     */
     private record PhotoPages(String chapterId, List<PicaImage> images) {
     }
 
+    /**
+     * 一次本子刷新得到的快照及其代数，供后续定位和缓存提交沿用同一版本。
+     */
     private record AlbumRefresh(PicaAlbum album, long generation) {
     }
 
@@ -212,6 +244,7 @@ final class DefaultPicaClient implements IPicaClient {
     private final ImageFileMover imageFileMover;
     private final Runnable afterLoginCommit;
     private final Runnable beforeCacheCommit;
+    /** 用于测量 client 关闭总预算的单调时间源。 */
     private final LongSupplier nanoTime;
 
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -251,6 +284,11 @@ final class DefaultPicaClient implements IPicaClient {
                 System::nanoTime);
     }
 
+    /**
+     * 使用指定的单调时间源构造 client；其余构造器使用系统单调时钟。
+     *
+     * <p>时间源只用于测量关闭流程的已用时间，不参与 API 请求时间戳或签名。</p>
+     */
     DefaultPicaClient(PicaConfiguration config,
                       OkHttpBuilder.HttpClientContext context,
                       ImageFileWriter imageFileWriter,
@@ -287,7 +325,7 @@ final class DefaultPicaClient implements IPicaClient {
         this.domainManager.startPeriodicProbe(config.getDomainProbeIntervalMs());
     }
 
-    // == Public request factories and synchronous conveniences ==
+    // == 请求句柄工厂与同步便利方法 ==
 
     @Override
     public PicaRequest<PicaAlbum> newAlbumRequest(String albumId) {
@@ -492,7 +530,7 @@ final class DefaultPicaClient implements IPicaClient {
     }
 
     /**
-     * Package-private fixture helper retained for U1 domain tests.
+     * 重新探测当前配置中的所有 API host。
      */
     void reprobeDomains() {
         if (!closed.get()) {
@@ -501,7 +539,7 @@ final class DefaultPicaClient implements IPicaClient {
     }
 
     /**
-     * Package-private fixture helper retained for U1 album tests.
+     * 获取指定本子的章节摘要列表。
      */
     @SuppressWarnings("unchecked")
     List<PicaPhoto> getPhotoList(String albumId) {
@@ -515,7 +553,7 @@ final class DefaultPicaClient implements IPicaClient {
         }
     }
 
-    // == Album and photo operations ==
+    // == 本子与章节操作 ==
 
     private PicaAlbum executeAlbum(PicaRequestImpl<?> request, String albumId, boolean refresh) {
         request.checkBeforeWork();
@@ -801,7 +839,7 @@ final class DefaultPicaClient implements IPicaClient {
         }
     }
 
-    // == Other API operations ==
+    // == 其他 API 操作 ==
 
     private PicaContentPage executeSearch(PicaRequestImpl<?> request, SearchQuery query) {
         AuthContext auth = captureAuth(false);
@@ -1022,7 +1060,7 @@ final class DefaultPicaClient implements IPicaClient {
             copyCookies(candidateCookies);
             sessionUser = PicaModelCopies.user(user);
             sessionState = PicaSessionState.SIGNED_IN;
-            // The token is never returned in a public model or exception.
+            // token 不会出现在公开 model 或异常中。
             token = candidateToken;
             attempt.committed.set(new LoginCommit(login, login.generation()));
         }
@@ -1103,7 +1141,7 @@ final class DefaultPicaClient implements IPicaClient {
         }
     }
 
-    // == Cache and session helpers ==
+    // == 缓存与会话辅助方法 ==
 
     private PicaAlbum cachedAlbum(String albumId) {
         return PicaModelCopies.album(cachedAlbumInternal(albumId));
@@ -1141,8 +1179,9 @@ final class DefaultPicaClient implements IPicaClient {
     }
 
     /**
-     * Validates the captured generations and publishes the album snapshot as one
-     * critical section with every invalidation/cleanup path.
+     * 校验捕获的会话与本子代数，并在同一个临界区发布本子快照。
+     *
+     * <p>校验、缓存写入和按需清理章节缓存与所有失效路径共享同一把锁。</p>
      */
     private boolean commitAlbumIfCurrent(AuthContext auth,
                                          String albumId,
@@ -1163,8 +1202,9 @@ final class DefaultPicaClient implements IPicaClient {
     }
 
     /**
-     * Publishes a complete photo only while its auth and album generations are
-     * still current. The cache write and the validation share sessionLock.
+     * 仅在会话与本子代数仍然有效时发布完整章节。
+     *
+     * <p>缓存写入与代数校验共享 {@code sessionLock}，避免旧请求在失效后重新填充缓存。</p>
      */
     private boolean commitPhotoIfCurrent(AuthContext auth,
                                          String albumId,
@@ -1181,7 +1221,7 @@ final class DefaultPicaClient implements IPicaClient {
     }
 
     /**
-     * Publishes favorites only while the authenticated generation is current.
+     * 仅在认证会话代数仍然有效时发布收藏分页。
      */
     private boolean commitFavoritePageIfCurrent(AuthContext auth,
                                                  PicaContentPage page,
@@ -1276,7 +1316,7 @@ final class DefaultPicaClient implements IPicaClient {
         }
     }
 
-    // == API transport ==
+    // == API 传输 ==
 
     private PicaResponse executeGetRequest(PicaRequestImpl<?> request,
                                            OkHttpClient client,
@@ -1380,7 +1420,7 @@ final class DefaultPicaClient implements IPicaClient {
     }
 
     /**
-     * Builds the app headers and signature for an API request.
+     * 构造 API 请求所需的应用 headers 和签名。
      */
     static Map<String, String> buildHeaders(HttpUrl url,
                                             String method,
@@ -1436,7 +1476,7 @@ final class DefaultPicaClient implements IPicaClient {
         imageCalls.remove(call);
     }
 
-    // == Image requests and download conveniences ==
+    // == 图片请求与下载便利方法 ==
 
     @Override
     public PicaImageRequest newImageRequest(PicaImage image) {
@@ -1731,7 +1771,7 @@ final class DefaultPicaClient implements IPicaClient {
         private final Map<PicaImage, Exception> failed = new ConcurrentHashMap<>();
     }
 
-    // == Response helpers and validation ==
+    // == 响应辅助方法与校验 ==
 
     private static JsonObject responseData(PicaResponse response) {
         try {
@@ -1791,7 +1831,7 @@ final class DefaultPicaClient implements IPicaClient {
         }
     }
 
-    // == Resources ==
+    // == 资源生命周期 ==
 
     @Override
     public void close() {
@@ -1829,6 +1869,7 @@ final class DefaultPicaClient implements IPicaClient {
 
         if (ownsDownloadExecutor) {
             downloadExecutor.shutdown();
+            // 使用时间差而非绝对 deadline，允许单调时钟跨越 long 的符号边界。
             long elapsed = nanoTime.getAsLong() - start;
             long remaining = closeTimeoutNanos(config.getCloseTimeoutMs()) - elapsed;
             if (remaining > 0) {

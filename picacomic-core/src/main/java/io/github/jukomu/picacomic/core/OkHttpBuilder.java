@@ -18,7 +18,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 只负责组装 client-owned 网络资源。
+ * 只负责组装 client 自有的网络资源。
  */
 final class OkHttpBuilder {
 

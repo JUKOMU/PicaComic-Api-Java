@@ -33,9 +33,9 @@ public final class CachePool<K, V> {
         }
     }
 
-    // 单位: Byte
+    // 单位：字节
     private final long capacity;
-    // 单位: Byte
+    // 单位：字节
     private long currentSize;
     private int minFreq;
     private final Map<K, Node<K, V>> cacheMap;
@@ -164,7 +164,9 @@ public final class CachePool<K, V> {
     }
 
     /**
-     * Removes every entry matching the supplied key predicate.
+     * 移除所有满足指定 key 条件的缓存项。
+     *
+     * @param predicate 缓存 key 筛选条件
      */
     public void removeIf(Predicate<? super K> predicate) {
         if (predicate == null) {

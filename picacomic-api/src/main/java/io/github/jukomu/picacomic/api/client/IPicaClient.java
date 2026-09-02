@@ -36,10 +36,12 @@ public interface IPicaClient extends AutoCloseable {
     PicaAlbum getAlbum(String albumId);
 
     /**
-     * 根据章节id获取章节详情
+     * 根据章节顺序获取章节详情。
      *
-     * @param albumId 本子id
-     * @param order   顺序
+     * <p>该重载按当前服务端的 order 定位章节，不把 order 作为章节的稳定身份。</p>
+     *
+     * @param albumId 本子 ID
+     * @param order   当前章节顺序，从 1 开始
      * @return 章节详情对象
      */
     PicaPhoto getPhoto(String albumId, int order);
@@ -55,16 +57,25 @@ public interface IPicaClient extends AutoCloseable {
 
     /**
      * 绕过章节缓存并按稳定章节 ID 刷新章节详情。
+     *
+     * @param albumId 本子 ID
+     * @param chapterId 稳定章节 ID
+     * @return 刷新后的章节详情
      */
     PicaPhoto refreshPhoto(String albumId, String chapterId);
 
     /**
      * 绕过缓存刷新本子及其章节索引。
+     *
+     * @param albumId 本子 ID
+     * @return 刷新后的本子详情
      */
     PicaAlbum refreshAlbum(String albumId);
 
     /**
      * 本地使本子及其章节缓存失效；下一次读取会访问网络。
+     *
+     * @param albumId 本子 ID
      */
     void invalidateAlbum(String albumId);
 
@@ -92,30 +103,111 @@ public interface IPicaClient extends AutoCloseable {
      */
     PicaImageRequest newImageRequest(PicaImage image);
 
+    /**
+     * 创建一个使用缓存读取本子详情的同步请求句柄。
+     *
+     * @param albumId 本子 ID
+     * @return 单次本子详情请求句柄
+     */
     PicaRequest<PicaAlbum> newAlbumRequest(String albumId);
 
+    /**
+     * 创建一个绕过本子缓存并刷新章节索引的同步请求句柄。
+     *
+     * @param albumId 本子 ID
+     * @return 单次本子刷新请求句柄
+     */
     PicaRequest<PicaAlbum> newAlbumRefreshRequest(String albumId);
 
+    /**
+     * 创建一个按稳定章节 ID 读取章节详情的同步请求句柄。
+     *
+     * @param albumId 本子 ID
+     * @param chapterId 稳定章节 ID
+     * @return 单次章节详情请求句柄
+     */
     PicaRequest<PicaPhoto> newPhotoRequest(String albumId, String chapterId);
 
+    /**
+     * 创建一个绕过章节缓存并按稳定章节 ID刷新的同步请求句柄。
+     *
+     * @param albumId 本子 ID
+     * @param chapterId 稳定章节 ID
+     * @return 单次章节刷新请求句柄
+     */
     PicaRequest<PicaPhoto> newPhotoRefreshRequest(String albumId, String chapterId);
 
+    /**
+     * 创建一个按章节顺序读取章节详情的同步请求句柄。
+     *
+     * @param albumId 本子 ID
+     * @param order 当前章节顺序，从 1 开始
+     * @return 单次章节详情请求句柄
+     */
     PicaRequest<PicaPhoto> newPhotoByOrderRequest(String albumId, int order);
 
+    /**
+     * 创建一个搜索请求句柄。
+     *
+     * @param query 搜索参数
+     * @return 单次搜索请求句柄
+     */
     PicaRequest<PicaContentPage> newSearchRequest(SearchQuery query);
 
+    /**
+     * 创建一个收藏夹查询请求句柄。
+     *
+     * @param query 收藏夹查询参数
+     * @return 单次收藏夹请求句柄
+     */
     PicaRequest<PicaContentPage> newFavoritesRequest(SearchQuery query);
 
+    /**
+     * 创建一个分类查询请求句柄。
+     *
+     * @param query 分类查询参数
+     * @return 单次分类请求句柄
+     */
     PicaRequest<PicaContentPage> newCategoriesRequest(SearchQuery query);
 
+    /**
+     * 创建一个排行榜查询请求句柄。
+     *
+     * @param timeOption 排行榜时间范围
+     * @return 单次排行榜请求句柄
+     */
     PicaRequest<PicaContentPage> newLeaderboardRequest(TimeOption timeOption);
 
+    /**
+     * 创建一个骑士榜查询请求句柄。
+     *
+     * @return 单次骑士榜请求句柄
+     */
     PicaRequest<List<PicaUserInfo>> newKnightLeaderboardRequest();
 
+    /**
+     * 创建一个随机本子查询请求句柄。
+     *
+     * @return 单次随机本子请求句柄
+     */
     PicaRequest<PicaContentPage> newRandomAlbumsRequest();
 
+    /**
+     * 创建一个读取当前用户资料的请求句柄。
+     *
+     * @return 单次用户资料请求句柄
+     */
     PicaRequest<PicaUserInfo> newUserInfoRequest();
 
+    /**
+     * 创建一个执行登录流程的请求句柄。
+     *
+     * <p>只有登录和资料校验都成功后，client 才会提交新会话。</p>
+     *
+     * @param userNameOrEmail 用户名或邮箱
+     * @param password 密码
+     * @return 单次登录请求句柄
+     */
     PicaRequest<PicaUserInfo> newLoginRequest(String userNameOrEmail, String password);
 
     /**
@@ -184,6 +276,8 @@ public interface IPicaClient extends AutoCloseable {
 
     /**
      * 获取不含 token、cookie 或密码的当前进程会话快照。
+     *
+     * @return 当前会话快照
      */
     PicaSessionSnapshot getSession();
 

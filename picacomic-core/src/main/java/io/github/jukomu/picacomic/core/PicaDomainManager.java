@@ -63,7 +63,9 @@ final class PicaDomainManager {
     }
 
     /**
-     * Installs the client-owned probe and invalidates the initial availability snapshot.
+     * 设置 client 自有的探测器，并使初始可用性快照失效。
+     *
+     * @param probe 用于探测 API host 的回调
      */
     void setProbe(DomainProbe probe) {
         Objects.requireNonNull(probe, "Domain probe cannot be null");
@@ -78,7 +80,9 @@ final class PicaDomainManager {
     }
 
     /**
-     * Starts periodic checks for the configured host pool.
+     * 为配置的 host 池启动周期性探测。
+     *
+     * @param intervalMs 探测间隔，非正数表示不启动周期任务
      */
     void startPeriodicProbe(long intervalMs) {
         if (intervalMs <= 0) {
@@ -100,7 +104,7 @@ final class PicaDomainManager {
                     probeDomains(current, () -> shutdown);
                     markInitialized();
                 } catch (RuntimeException ignored) {
-                    // Background probe failures do not escape to request callers.
+                    // 后台探测失败不能传播到请求调用方。
                     if (!shutdown) {
                         markInitialized();
                     }
@@ -112,7 +116,9 @@ final class PicaDomainManager {
     }
 
     /**
-     * Ensures that the first request observes a completed availability probe.
+     * 确保第一个请求看到已完成的可用性探测。
+     *
+     * @param cancelled 用于检查调用方是否已取消的回调
      */
     void ensureInitialized(BooleanSupplier cancelled) {
         Objects.requireNonNull(cancelled, "Cancellation check cannot be null");
@@ -166,7 +172,9 @@ final class PicaDomainManager {
     }
 
     /**
-     * Probes every configured host immediately. A caller may use this to request a fresh snapshot.
+     * 立即探测所有已配置的 host，以便调用方获取新的可用性快照。
+     *
+     * @param probe 用于探测 API host 的回调
      */
     void probeAllDomains(DomainProbe probe) {
         Objects.requireNonNull(probe, "Domain probe cannot be null");
@@ -282,7 +290,7 @@ final class PicaDomainManager {
                         anyReachable |= reachable[i];
                         break;
                     } catch (java.util.concurrent.TimeoutException ignored) {
-                        // Recheck cancellation while a network probe is in progress.
+                        // 网络探测进行期间持续检查取消状态。
                     } catch (InterruptedException exception) {
                         Thread.currentThread().interrupt();
                         throw new CancellationException("Domain probe interrupted");

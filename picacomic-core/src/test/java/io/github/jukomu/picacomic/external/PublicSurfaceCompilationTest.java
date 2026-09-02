@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Compiles source from a package that is outside the core implementation package.
+ * 从 core 实现包之外的包编译并验证公开 API。
  */
 class PublicSurfaceCompilationTest {
 

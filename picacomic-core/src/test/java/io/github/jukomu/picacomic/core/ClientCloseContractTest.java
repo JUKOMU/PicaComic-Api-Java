@@ -84,7 +84,7 @@ class ClientCloseContractTest {
                             break;
                         }
                     } catch (InterruptedException ignored) {
-                        // Keep the fixture worker alive until the test releases it.
+                        // 在测试释放夹具前保持 worker 存活。
                     }
                 }
                 Files.write(temporary, bytes, StandardOpenOption.WRITE);
@@ -142,7 +142,7 @@ class ClientCloseContractTest {
                                 break;
                             }
                         } catch (InterruptedException ignored) {
-                            // Hold the owned worker until the test releases it.
+                            // 在测试释放夹具前保持自有 worker 存活。
                         }
                     }
                     Files.write(temporary, bytes, StandardOpenOption.WRITE);
