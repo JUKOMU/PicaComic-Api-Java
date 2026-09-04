@@ -1,0 +1,91 @@
+name: android-consumer-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_USER_HOME: ${{ runner.temp }}/picacomic-gradle-home
+
+jobs:
+  prepublish-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up JDK 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: 'platforms;android-36 build-tools;35.0.0'
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: '8.11.1'
+          cache-disabled: true
+      - name: Run pre-publish isolated D8/R8 smoke
+        run: ./tools/android-consumer.sh --prepublish :app:assembleDebug :app:lintDebug :app:assembleRelease
+      - name: Upload pre-publish APKs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-prepublish-apks
+          path: smoke/android-consumer/app/build/outputs/apk/
+
+  quick-instrumentation:
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [24, 36]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up JDK 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: 'platforms;android-36 build-tools;35.0.0 emulator'
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: '8.11.1'
+          cache-disabled: true
+      - name: Create API ${{ matrix.api-level }} emulator
+        run: |
+          sdkmanager --install "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
+          echo no | avdmanager create avd --force --name "pica-api-${{ matrix.api-level }}" \
+            --package "system-images;android-${{ matrix.api-level }};google_apis;x86_64" --device pixel_2
+          nohup emulator -avd "pica-api-${{ matrix.api-level }}" -no-window -no-audio \
+            -no-boot-anim -gpu swiftshader_indirect >"${{ runner.temp }}/emulator.log" 2>&1 &
+          adb wait-for-device
+          for attempt in $(seq 1 60); do
+            booted=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            if [ "$booted" = "1" ]; then break; fi
+            sleep 2
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+          adb shell input keyevent 82 || true
+      - name: Run API ${{ matrix.api-level }} instrumentation smoke
+        run: ./tools/android-consumer.sh --prepublish :app:connectedReleaseAndroidTest
+      - name: Upload instrumentation reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-api-${{ matrix.api-level }}-reports
+          path: |
+            smoke/android-consumer/app/build/reports/
+            smoke/android-consumer/app/build/outputs/androidTest-results/

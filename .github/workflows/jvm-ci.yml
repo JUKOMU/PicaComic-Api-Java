@@ -1,0 +1,53 @@
+name: jvm-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Run JVM and packaging gate
+        run: mvn -B -ntp clean verify
+      - name: Check API signature and dependency boundary
+        run: |
+          ./tools/check-public-surface.sh
+          mvn -B -ntp -pl picacomic-core -am dependency:tree \
+            -Dscope=runtime -DoutputFile=target/runtime-dependency-tree.txt
+          ! grep -E 'commons-lang3|webp-imageio|slf4j-simple' picacomic-core/target/runtime-dependency-tree.txt
+          jdeps --ignore-missing-deps --print-module-deps picacomic-core/target/classes | grep -v 'java.desktop'
+          jar tf picacomic-api/target/picacomic-api-0.1.0-rc.1.jar | grep -Fx META-INF/LICENSE
+          jar tf picacomic-core/target/picacomic-core-0.1.0-rc.1.jar | grep -Fx META-INF/LICENSE
+      - name: Require the restored JVM test matrix
+        run: |
+          test_count=$(sed -nE 's/.*Tests run: ([0-9]+).*/\1/p' picacomic-core/target/surefire-reports/*.txt | awk '{ total += $1 } END { print total + 0 }')
+          test "$test_count" -ge 90
+          ! grep -E 'Failures: [1-9]|Errors: [1-9]|Skipped: [1-9]' picacomic-core/target/surefire-reports/*.txt
+          echo "Discovered $test_count JVM tests"
+      - name: Upload JVM evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: jvm-evidence
+          path: |
+            api-signature/public-api.txt
+            picacomic-core/target/surefire-reports/
+            picacomic-core/target/runtime-dependency-tree.txt
+            picacomic-api/target/*jar
+            picacomic-core/target/*jar

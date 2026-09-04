@@ -6,7 +6,7 @@
 
     <groupId>io.github.jukomu</groupId>
     <artifactId>picacomic-api-java</artifactId>
-    <version>0.0.1</version>
+    <version>0.1.0-rc.1</version>
     <packaging>pom</packaging>
     <modules>
         <module>picacomic-api</module>
@@ -16,6 +16,21 @@
     <name>PicaComic API for Java</name>
     <description>A Java library to fetch data from PicaComic server.</description>
     <url>https://github.com/JUKOMU/PicaComic-Api-Java.git</url>
+
+    <developers>
+        <developer>
+            <id>JUKOMU</id>
+            <name>JUKOMU</name>
+            <url>https://github.com/JUKOMU</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/JUKOMU/PicaComic-Api-Java.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/JUKOMU/PicaComic-Api-Java.git</developerConnection>
+        <url>https://github.com/JUKOMU/PicaComic-Api-Java</url>
+        <tag>v0.1.0-rc.1</tag>
+    </scm>
 
     <licenses>
         <license>
@@ -27,28 +42,24 @@
 
     <properties>
         <java.version>17</java.version>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <project.build.outputTimestamp>2026-09-04T00:00:00Z</project.build.outputTimestamp>
         <okhttp.version>4.12.0</okhttp.version>
         <gson.version>2.13.2</gson.version>
-        <webp.version>0.1.6</webp.version>
         <slf4j.version>2.0.12</slf4j.version>
         <junit.version>5.10.2</junit.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven.source.plugin.version>3.3.0</maven.source.plugin.version>
         <maven.javadoc.plugin.version>3.6.2</maven.javadoc.plugin.version>
+        <maven.gpg.plugin.version>3.2.7</maven.gpg.plugin.version>
+        <central.publishing.plugin.version>0.11.0</central.publishing.plugin.version>
+        <central.autoPublish>false</central.autoPublish>
+        <skipPublishing>false</skipPublishing>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!-- 工具 -->
-            <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>${commons-lang3.version}</version>
-            </dependency>
             <!-- 网络 -->
             <dependency>
                 <groupId>com.squareup.okhttp3</groupId>
@@ -65,12 +76,6 @@
                 <groupId>com.google.code.gson</groupId>
                 <artifactId>gson</artifactId>
                 <version>${gson.version}</version>
-            </dependency>
-            <!-- webp支持 -->
-            <dependency>
-                <groupId>org.sejda.imageio</groupId>
-                <artifactId>webp-imageio</artifactId>
-                <version>${webp.version}</version>
             </dependency>
             <!-- 日志门面 -->
             <dependency>
@@ -120,8 +125,7 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven-compiler-plugin.version}</version>
                     <configuration>
-                        <source>${java.version}</source>
-                        <target>${java.version}</target>
+                        <release>${maven.compiler.release}</release>
                     </configuration>
                 </plugin>
                 <!-- sources -->
@@ -152,7 +156,7 @@
                                 <goal>jar</goal>
                             </goals>
                             <configuration>
-                                <failOnError>false</failOnError>
+                                <failOnError>true</failOnError>
                                 <encoding>UTF-8</encoding>
                             </configuration>
                         </execution>
@@ -168,7 +172,7 @@
                 <version>${maven.javadoc.plugin.version}</version>
                 <configuration>
                     <doclint>none</doclint>
-                    <failOnError>false</failOnError>
+                    <failOnError>true</failOnError>
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <additionalJOptions>
                         <additionalJOption>-Xdoclint:none</additionalJOption>
@@ -215,4 +219,47 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>release-signing</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven.gpg.plugin.version}</version>
+                        <configuration>
+                            <bestPractices>true</bestPractices>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central.publishing.plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>${central.autoPublish}</autoPublish>
+                            <skipPublishing>${skipPublishing}</skipPublishing>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -1,0 +1,139 @@
+name: verify-release
+
+on:
+  workflow_run:
+    workflows:
+      - publish-central
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact published tag or commit to verify
+        required: true
+        default: v0.1.0-rc.1
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  GRADLE_USER_HOME: ${{ runner.temp }}/picacomic-gradle-home
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+    runs-on: ubuntu-latest
+    env:
+      MAVEN_REPO_LOCAL: ${{ runner.temp }}/picacomic-maven-home
+    steps:
+      - name: Check out the exact published source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.ref }}
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: 'platforms;android-36 build-tools;35.0.0 emulator'
+      - name: Set up Gradle 8.11.1 without a cache
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: '8.11.1'
+          cache-disabled: true
+      - name: Resolve exact Central coordinates from an empty Maven home
+        run: |
+          mkdir -p "$MAVEN_REPO_LOCAL"
+          resolved=false
+          for attempt in $(seq 1 12); do
+            if mvn -B -ntp -Dmaven.repo.local="$MAVEN_REPO_LOCAL" \
+              -Dartifact=io.github.jukomu:picacomic-core:0.1.0-rc.1 \
+              -Dtransitive=true dependency:get; then
+              resolved=true
+              break
+            fi
+            if [ "$attempt" -lt 12 ]; then sleep 30; fi
+          done
+          test "$resolved" = true
+      - name: Verify the clean consumer from Maven Central
+        run: |
+          gradle -p smoke/android-consumer --no-daemon --no-build-cache \
+            --refresh-dependencies --dependency-verification=strict \
+            :app:assembleDebug :app:lintDebug :app:assembleRelease
+
+      - name: Create API ${{ matrix.api-level }} emulator
+        run: |
+          sdkmanager --install "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
+          echo no | avdmanager create avd --force --name "pica-api-${{ matrix.api-level }}" \
+            --package "system-images;android-${{ matrix.api-level }};google_apis;x86_64" --device pixel_2
+          nohup emulator -avd "pica-api-${{ matrix.api-level }}" -no-window -no-audio \
+            -no-boot-anim -gpu swiftshader_indirect >"${{ runner.temp }}/emulator.log" 2>&1 &
+          adb wait-for-device
+          for attempt in $(seq 1 60); do
+            booted=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            if [ "$booted" = "1" ]; then break; fi
+            sleep 2
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+          adb shell input keyevent 82 || true
+
+      - name: Run API ${{ matrix.api-level }} release instrumentation
+        run: |
+          gradle -p smoke/android-consumer --no-daemon --no-build-cache \
+            --refresh-dependencies --dependency-verification=strict \
+            :app:connectedReleaseAndroidTest
+
+      - name: Download the publishing run manifest
+        if: always() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "${{ github.event.workflow_run.id }}" --name release-manifest --dir release-evidence
+
+      - name: Compare Central downloads with the publishing manifest
+        if: always() && github.event_name == 'workflow_run'
+        run: |
+          hashes="$(find release-evidence -name sha256sums.txt -print -quit)"
+          test -n "$hashes"
+          core_jar="$MAVEN_REPO_LOCAL/io/github/jukomu/picacomic-core/0.1.0-rc.1/picacomic-core-0.1.0-rc.1.jar"
+          core_pom="$MAVEN_REPO_LOCAL/io/github/jukomu/picacomic-core/0.1.0-rc.1/picacomic-core-0.1.0-rc.1.pom"
+          test -f "$core_jar"
+          test -f "$core_pom"
+          expected_jar="$(grep -E 'picacomic-core-0\.1\.0-rc\.1\.jar$' "$hashes" | awk 'NR == 1 { print $1 }')"
+          expected_pom="$(grep -E 'picacomic-core-0\.1\.0-rc\.1\.pom$' "$hashes" | awk 'NR == 1 { print $1 }')"
+          test "$(sha256sum "$core_jar" | awk '{ print $1 }')" = "$expected_jar"
+          test "$(sha256sum "$core_pom" | awk '{ print $1 }')" = "$expected_pom"
+          grep -F '"version": "0.1.0-rc.1"' release-evidence/*/release-manifest.json release-evidence/release-manifest.json
+
+      - name: Write clean-consumer verification evidence
+        if: always()
+        run: |
+          mkdir -p release-evidence
+          printf '{
+            "repository": "%s",
+            "commit": "%s",
+            "apiLevel": %s,
+            "artifact": "io.github.jukomu:picacomic-core:0.1.0-rc.1",
+            "artifactSource": "maven-central",
+            "workflowRun": "%s"
+          }
+          ' "$GITHUB_REPOSITORY" "$(git rev-parse HEAD)" "${{ matrix.api-level }}" "${{ github.run_id }}" \
+            > "release-evidence/clean-consumer-api-${{ matrix.api-level }}.json"
+      - name: Upload clean-consumer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-api-${{ matrix.api-level }}
+          path: |
+            release-evidence/
+            smoke/android-consumer/app/build/reports/
+            smoke/android-consumer/app/build/outputs/apk/
