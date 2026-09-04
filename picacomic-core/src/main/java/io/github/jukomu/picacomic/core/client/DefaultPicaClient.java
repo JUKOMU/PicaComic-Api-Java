@@ -290,33 +290,33 @@ public final class DefaultPicaClient implements IPicaClient {
     }
 
     // == 请求句柄工厂与同步便利方法 ==
-
+    @Override
     public PicaRequest<PicaAlbum> newAlbumRequest(String albumId) {
         requireId(albumId, "Album ID");
         return newRequest(request -> executeAlbum(request, albumId, false));
     }
 
-
+    @Override
     public PicaRequest<PicaAlbum> newAlbumRefreshRequest(String albumId) {
         requireId(albumId, "Album ID");
         return newRequest(request -> executeAlbum(request, albumId, true));
     }
 
-
+    @Override
     public PicaRequest<PicaPhoto> newPhotoRequest(String albumId, String chapterId) {
         requireId(albumId, "Album ID");
         requireId(chapterId, "Chapter ID");
         return newRequest(request -> executePhotoById(request, albumId, chapterId, false));
     }
 
-
+    @Override
     public PicaRequest<PicaPhoto> newPhotoRefreshRequest(String albumId, String chapterId) {
         requireId(albumId, "Album ID");
         requireId(chapterId, "Chapter ID");
         return newRequest(request -> executePhotoById(request, albumId, chapterId, true));
     }
 
-
+    @Override
     public PicaRequest<PicaPhoto> newPhotoByOrderRequest(String albumId, int order) {
         requireId(albumId, "Album ID");
         if (order < 1) {
@@ -325,46 +325,46 @@ public final class DefaultPicaClient implements IPicaClient {
         return newRequest(request -> executePhotoByOrder(request, albumId, order));
     }
 
-
+    @Override
     public PicaRequest<PicaContentPage> newSearchRequest(SearchQuery query) {
         validateSearchQuery(query, true);
         return newRequest(request -> executeSearch(request, query));
     }
 
-
+    @Override
     public PicaRequest<PicaContentPage> newFavoritesRequest(SearchQuery query) {
         validateSearchQuery(query, false);
         return newRequest(request -> executeFavorites(request, query));
     }
 
-
+    @Override
     public PicaRequest<PicaContentPage> newCategoriesRequest(SearchQuery query) {
         Objects.requireNonNull(query, "Query cannot be null");
         return newRequest(request -> executeCategories(request, query));
     }
 
-
+    @Override
     public PicaRequest<PicaContentPage> newLeaderboardRequest(TimeOption timeOption) {
         Objects.requireNonNull(timeOption, "Time option cannot be null");
         return newRequest(request -> executeLeaderboard(request, timeOption));
     }
 
-
+    @Override
     public PicaRequest<List<PicaUserInfo>> newKnightLeaderboardRequest() {
         return newRequest(this::executeKnightLeaderboard);
     }
 
-
+    @Override
     public PicaRequest<PicaContentPage> newRandomAlbumsRequest() {
         return newRequest(this::executeRandomAlbums);
     }
 
-
+    @Override
     public PicaRequest<PicaUserInfo> newUserInfoRequest() {
         return newRequest(this::executeUserInfo);
     }
 
-
+    @Override
     public PicaRequest<PicaUserInfo> newLoginRequest(String userNameOrEmail, String password) {
         Objects.requireNonNull(userNameOrEmail, "Username or email cannot be null");
         Objects.requireNonNull(password, "Password cannot be null");
