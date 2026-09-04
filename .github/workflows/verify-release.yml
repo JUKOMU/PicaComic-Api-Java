@@ -18,9 +18,6 @@ permissions:
   actions: read
   contents: read
 
-env:
-  GRADLE_USER_HOME: ${{ runner.temp }}/picacomic-gradle-home
-
 jobs:
   verify:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
@@ -29,9 +26,11 @@ jobs:
       matrix:
         api-level: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
     runs-on: ubuntu-latest
-    env:
-      MAVEN_REPO_LOCAL: ${{ runner.temp }}/picacomic-maven-home
     steps:
+      - name: Configure isolated build homes
+        run: |
+          echo "GRADLE_USER_HOME=${RUNNER_TEMP}/picacomic-gradle-home" >> "$GITHUB_ENV"
+          echo "MAVEN_REPO_LOCAL=${RUNNER_TEMP}/picacomic-maven-home" >> "$GITHUB_ENV"
       - name: Check out the exact published source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

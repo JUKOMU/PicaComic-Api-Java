@@ -21,7 +21,6 @@ permissions:
   contents: read
 
 env:
-  GRADLE_USER_HOME: ${{ runner.temp }}/picacomic-gradle-home
   QUALIFICATION_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
 
 jobs:
@@ -33,6 +32,8 @@ jobs:
         api-level: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
     runs-on: ubuntu-latest
     steps:
+      - name: Configure isolated Gradle home
+        run: echo "GRADLE_USER_HOME=${RUNNER_TEMP}/picacomic-gradle-home" >> "$GITHUB_ENV"
       - name: Check out the exact candidate source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

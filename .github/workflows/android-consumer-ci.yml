@@ -9,13 +9,12 @@ on:
 permissions:
   contents: read
 
-env:
-  GRADLE_USER_HOME: ${{ runner.temp }}/picacomic-gradle-home
-
 jobs:
   prepublish-build:
     runs-on: ubuntu-latest
     steps:
+      - name: Configure isolated Gradle home
+        run: echo "GRADLE_USER_HOME=${RUNNER_TEMP}/picacomic-gradle-home" >> "$GITHUB_ENV"
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up JDK 17
@@ -48,6 +47,8 @@ jobs:
         api-level: [24, 36]
     runs-on: ubuntu-latest
     steps:
+      - name: Configure isolated Gradle home
+        run: echo "GRADLE_USER_HOME=${RUNNER_TEMP}/picacomic-gradle-home" >> "$GITHUB_ENV"
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up JDK 17
