@@ -8,7 +8,7 @@
 
 ![Java](https://img.shields.io/badge/Java-17+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
-<!-- ![Maven Central](https://img.shields.io/maven-central/v/io.github.jukomu/picacomic-core) -->
+<!-- Enable the Maven Central badge after the first immutable release. -->
 
 **A Java API library for fetching PicaComic data**
 
@@ -108,27 +108,38 @@ The core of this project is a **data fetching and management tool**, rather than
 
 ## Installation
 
-This project has not yet been published to the Maven Central Repository. You can use it locally by following these steps:
+The first immutable candidate is `0.1.0-rc.1`. After publication, a normal JVM or Android consumer only needs the core artifact; `picacomic-api` is resolved as a same-version transitive dependency:
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/JUKOMU/PicaComic-Api-Java.git
-   cd PicaComic-Api-Java
-   ```
+```xml
+<dependency>
+    <groupId>io.github.jukomu</groupId>
+    <artifactId>picacomic-core</artifactId>
+    <version>0.1.0-rc.1</version>
+</dependency>
+```
 
-2. Install it in your local Maven repository:
-   ```bash
-   mvn clean install
-   ```
+Do not use a `SNAPSHOT`, mutable branch, `mavenLocal()`, or hand-copied JAR as release acceptance evidence. For a source preflight, run `mvn clean verify` at the repository root; that validates the local reactor only and does not claim that Maven Central has published the artifact.
 
-3. Add the dependency to your `pom.xml` file:
-   ```xml
-   <dependency>
-       <groupId>io.github.jukomu</groupId>
-       <artifactId>picacomic-core</artifactId>
-       <version>0.0.1</version>
-   </dependency>
-   ```
+For Android API 24+, use JDK 17, AGP 8.10.1, Gradle 8.11.1, and NIO core-library desugaring:
+
+```kotlin
+dependencies {
+    implementation("io.github.jukomu:picacomic-core:0.1.0-rc.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+}
+
+android {
+    compileSdk = 36
+    defaultConfig { minSdk = 24; targetSdk = 36 }
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+```
+
+The library returns raw image bytes and does not depend on ImageIO or a desktop WebP decoder; Android applications should use the platform or their own image decoder.
 
 ---
 

@@ -1,0 +1,1 @@
+# The qualification build intentionally keeps the Pica dependency under the default R8 rules.

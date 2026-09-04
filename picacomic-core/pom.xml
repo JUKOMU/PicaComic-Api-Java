@@ -6,11 +6,15 @@
     <parent>
         <groupId>io.github.jukomu</groupId>
         <artifactId>picacomic-api-java</artifactId>
-        <version>0.0.1</version>
+        <version>0.1.0-rc.1</version>
     </parent>
 
     <artifactId>picacomic-core</artifactId>
     <packaging>jar</packaging>
+
+    <name>PicaComic API core</name>
+    <description>OkHttp-backed PicaComic client and download implementation.</description>
+    <url>https://github.com/JUKOMU/PicaComic-Api-Java/tree/master/picacomic-core</url>
 
     <dependencies>
         <dependency>
@@ -18,11 +22,6 @@
             <artifactId>picacomic-api</artifactId>
             <version>${project.version}</version>
             <scope>compile</scope>
-        </dependency>
-        <!-- 工具 -->
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-lang3</artifactId>
         </dependency>
         <!-- 网络 -->
         <dependency>
@@ -38,22 +37,10 @@
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
         </dependency>
-        <!-- webp支持 -->
-        <dependency>
-            <groupId>org.sejda.imageio</groupId>
-            <artifactId>webp-imageio</artifactId>
-        </dependency>
         <!-- 日志门面 -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-        </dependency>
-        <!-- 日志实现 -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>${slf4j.version}</version>
-            <scope>test</scope>
         </dependency>
         <!-- 测试依赖 -->
         <dependency>

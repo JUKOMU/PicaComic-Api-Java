@@ -1,0 +1,39 @@
+name: github-release
+
+on:
+  workflow_run:
+    workflows:
+      - verify-release
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'JUKOMU/PicaComic-Api-Java' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the verified tag commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Download the verified release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "${{ github.event.workflow_run.id }}" \
+          --pattern 'release-verification-api-*' --dir release-evidence
+      - name: Create the prerelease from the exact tag
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          tag_name: ${{ github.event.workflow_run.head_branch }}
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
+          prerelease: true
+          generate_release_notes: true
+          files: release-evidence/**

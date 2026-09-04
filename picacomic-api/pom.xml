@@ -6,10 +6,14 @@
     <parent>
         <groupId>io.github.jukomu</groupId>
         <artifactId>picacomic-api-java</artifactId>
-        <version>0.0.1</version>
+        <version>0.1.0-rc.1</version>
     </parent>
 
     <artifactId>picacomic-api</artifactId>
     <packaging>jar</packaging>
+
+    <name>PicaComic API contract</name>
+    <description>Public Java records, request contracts, models and exceptions for PicaComic.</description>
+    <url>https://github.com/JUKOMU/PicaComic-Api-Java/tree/master/picacomic-api</url>
 
 </project>

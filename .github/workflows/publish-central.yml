@@ -1,0 +1,149 @@
+name: publish-central
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    if: github.repository == 'JUKOMU/PicaComic-Api-Java'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Run the JVM release gate
+        run: mvn -B -ntp clean verify
+      - name: Check the API surface and runtime dependency boundary
+        run: |
+          ./tools/check-public-surface.sh
+          mvn -B -ntp -pl picacomic-core -am dependency:tree \
+            -Dscope=runtime -DoutputFile=target/runtime-dependency-tree.txt
+          ! grep -E 'commons-lang3|webp-imageio|slf4j-simple' \
+            picacomic-core/target/runtime-dependency-tree.txt
+          jdeps --ignore-missing-deps --print-module-deps picacomic-core/target/classes \
+            | grep -v 'java.desktop'
+          test "$(sed -nE 's/.*Tests run: ([0-9]+).*/\1/p' \
+            picacomic-core/target/surefire-reports/*.txt \
+            | awk '{ total += $1 } END { print total + 0 }')" -ge 90
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: 'platforms;android-36 build-tools;35.0.0'
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: '8.11.1'
+          cache-disabled: true
+      - name: Run the isolated pre-publish Android D8/R8 gate
+        run: ./tools/android-consumer.sh --prepublish :app:assembleDebug :app:lintDebug :app:assembleRelease
+
+  publish:
+    if: github.repository == 'JUKOMU/PicaComic-Api-Java'
+    needs: quality
+    runs-on: ubuntu-latest
+    environment: maven-central
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+        with:
+          distribution: temurin
+          java-version: '17'
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+      - name: Validate tag and POM versions
+        run: |
+          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = 'tag'
+          version="${GITHUB_REF_NAME#v}"
+          tag_commit="$(git rev-parse "$GITHUB_REF_NAME^{commit}")"
+          test "$tag_commit" = "$(git rev-parse HEAD)"
+          git fetch origin master --no-tags
+          git merge-base --is-ancestor "$tag_commit" origin/master
+          test "$version" = '0.1.0-rc.1'
+          for pom in pom.xml picacomic-api/pom.xml picacomic-core/pom.xml; do
+            pom_version="$(mvn -q -f "$pom" help:evaluate \
+              -Dexpression=project.version -DforceStdout)"
+            test "$version" = "$pom_version"
+          done
+          test -z "$(git status --porcelain)"
+      - name: Import the protected signing key
+        env:
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+        run: |
+          key_file="$(mktemp)"
+          printf '%s' "$MAVEN_GPG_PRIVATE_KEY" >"$key_file"
+          gpg --batch --import "$key_file"
+          rm -f "$key_file"
+      - name: Publish once from the verified tag
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+        run: |
+          mvn -B -ntp -P release-signing -Dcentral.autoPublish=true deploy
+      - name: Write release manifest
+        run: |
+          mkdir -p release-manifest
+          version="${GITHUB_REF_NAME#v}"
+          cp pom.xml release-manifest/picacomic-api-java.pom
+          cp picacomic-api/pom.xml release-manifest/picacomic-api.pom
+          cp picacomic-core/pom.xml release-manifest/picacomic-core.pom
+          fingerprint="$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test -n "$fingerprint"
+          printf '{
+            "repository": "%s",
+            "tag": "%s",
+            "commit": "%s",
+            "version": "%s",
+            "coordinates": [
+              "io.github.jukomu:picacomic-api-java:%s",
+              "io.github.jukomu:picacomic-api:%s",
+              "io.github.jukomu:picacomic-core:%s"
+            ],
+            "centralUrl": "https://central.sonatype.com/artifact/io.github.jukomu/picacomic-core/%s",
+            "pgpFingerprint": "%s",
+            "workflow": "%s/%s/actions/runs/%s"
+          }
+          ' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$(git rev-parse HEAD)" \
+            "$version" "$version" "$version" "$version" "$version" "$fingerprint" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" \
+            > release-manifest/release-manifest.json
+          find . -maxdepth 4 -type f \
+            \( -name '*.jar' -o -name '*.pom' -o -name '*.asc' -o -name 'central-bundle.zip' \) \
+            -not -path './.git/*' -print0 \
+            | sort -z | xargs -0 sha256sum > release-manifest/sha256sums.txt
+          find . -maxdepth 4 -type f \
+            \( -name '*.jar' -o -name '*.pom' -o -name '*.asc' -o -name 'central-bundle.zip' \) \
+            -not -path './.git/*' -print0 \
+            | sort -z | xargs -0 sha512sum > release-manifest/sha512sums.txt
+      - name: Upload release manifest and signed files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-manifest
+          path: |
+            release-manifest/
+            picacomic-api/target/*.jar
+            picacomic-api/target/*.asc
+            picacomic-core/target/*.jar
+            picacomic-core/target/*.asc
+            target/*.asc

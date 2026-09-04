@@ -8,7 +8,7 @@
 
 ![Java](https://img.shields.io/badge/Java-17+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
-<!-- ![Maven Central](https://img.shields.io/maven-central/v/io.github.jukomu/picacomic-core) -->
+<!-- Maven Central badge is enabled only after the first immutable release. -->
 
 **一个用于获取 PicaComic (哔咔漫画) 数据的 Java API 库**
 
@@ -110,27 +110,38 @@
 
 ## 安装 (Installation)
 
-本项目尚未发布到 Maven 中央仓库。您可以通过以下方式在本地使用：
+首个不可变候选版本为 `0.1.0-rc.1`。发布后，普通 JVM/Android consumer 只需声明 core；`picacomic-api` 会作为同版本传递依赖解析：
 
-1. 克隆本仓库:
-   ```bash
-   git clone https://github.com/JUKOMU/PicaComic-Api-Java.git
-   cd PicaComic-Api-Java
-   ```
+```xml
+<dependency>
+    <groupId>io.github.jukomu</groupId>
+    <artifactId>picacomic-core</artifactId>
+    <version>0.1.0-rc.1</version>
+</dependency>
+```
 
-2. 在本地 Maven 仓库中安装:
-   ```bash
-   mvn clean install
-   ```
+不要使用 `SNAPSHOT`、可变分支、`mavenLocal()` 或手工复制 JAR 作为发布验收证据。需要从源码预检时，在仓库根目录执行 `mvn clean verify`；这只验证本地 reactor，不代表 Maven Central 已发布。
 
-3. 在您的 `pom.xml` 文件中添加依赖:
-   ```xml
-   <dependency>
-       <groupId>io.github.jukomu</groupId>
-       <artifactId>picacomic-core</artifactId>
-       <version>0.0.1</version>
-   </dependency>
-   ```
+Android API 24+ consumer 使用 JDK 17、AGP 8.10.1、Gradle 8.11.1，并启用 NIO core-library desugaring：
+
+```kotlin
+dependencies {
+    implementation("io.github.jukomu:picacomic-core:0.1.0-rc.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+}
+
+android {
+    compileSdk = 36
+    defaultConfig { minSdk = 24; targetSdk = 36 }
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+```
+
+图片库只负责返回原始图片字节，不依赖 ImageIO 或 WebP 桌面解码器；Android 应用应使用平台或自己的图片解码器。
 
 ---
 
