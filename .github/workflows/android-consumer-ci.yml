@@ -66,13 +66,14 @@ jobs:
           gradle-version: '8.11.1'
           cache-disabled: true
       - name: Create API ${{ matrix.api-level }} emulator
+        timeout-minutes: 20
         run: |
-          sdkmanager --install "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
+          timeout 10m sdkmanager --install "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
           echo no | avdmanager create avd --force --name "pica-api-${{ matrix.api-level }}" \
             --package "system-images;android-${{ matrix.api-level }};google_apis;x86_64" --device pixel_2
           nohup emulator -avd "pica-api-${{ matrix.api-level }}" -no-window -no-audio \
             -no-boot-anim -gpu swiftshader_indirect >"${{ runner.temp }}/emulator.log" 2>&1 &
-          adb wait-for-device
+          timeout 5m adb wait-for-device
           for attempt in $(seq 1 60); do
             booted=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             if [ "$booted" = "1" ]; then break; fi
@@ -88,5 +89,6 @@ jobs:
         with:
           name: android-api-${{ matrix.api-level }}-reports
           path: |
+            ${{ runner.temp }}/emulator.log
             smoke/android-consumer/app/build/reports/
             smoke/android-consumer/app/build/outputs/androidTest-results/
