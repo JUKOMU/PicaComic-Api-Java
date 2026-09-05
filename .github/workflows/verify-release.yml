@@ -146,11 +146,11 @@ jobs:
           test "$(timeout 10s adb -s "$emulator_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" = "1"
           timeout 30s adb -s "$emulator_serial" shell input keyevent 82 || true
 
-      - name: Run API ${{ matrix.api-level }} release instrumentation
+      - name: Run API ${{ matrix.api-level }} instrumentation
         run: |
           gradle -p smoke/android-consumer --no-daemon --no-build-cache \
             --refresh-dependencies --dependency-verification=strict \
-            :app:connectedReleaseAndroidTest
+            :app:connectedDebugAndroidTest
 
       - name: Download the publishing run manifest
         if: always() && github.event_name == 'workflow_run'

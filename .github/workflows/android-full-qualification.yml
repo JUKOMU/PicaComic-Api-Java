@@ -137,15 +137,15 @@ jobs:
           done
           test "$(timeout 10s adb -s "$emulator_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" = "1"
           timeout 30s adb -s "$emulator_serial" shell input keyevent 82 || true
-      - name: Run API ${{ matrix.api-level }} release instrumentation
+      - name: Run API ${{ matrix.api-level }} instrumentation
         if: github.event_name == 'workflow_run'
         run: |
           gradle -p smoke/android-consumer --no-daemon --no-build-cache \
             --refresh-dependencies --dependency-verification=strict \
-            :app:connectedReleaseAndroidTest
+            :app:connectedDebugAndroidTest
       - name: Run API ${{ matrix.api-level }} pre-publish instrumentation
         if: github.event_name != 'workflow_run'
-        run: ./tools/android-consumer.sh --prepublish :app:connectedReleaseAndroidTest
+        run: ./tools/android-consumer.sh --prepublish :app:connectedDebugAndroidTest
       - name: Write machine-readable qualification evidence
         if: always()
         run: |

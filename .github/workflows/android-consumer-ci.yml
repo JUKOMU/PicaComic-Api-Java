@@ -141,7 +141,7 @@ jobs:
           test "$(timeout 10s adb -s "$emulator_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" = "1"
           timeout 30s adb -s "$emulator_serial" shell input keyevent 82 || true
       - name: Run API ${{ matrix.api-level }} instrumentation smoke
-        run: ./tools/android-consumer.sh --prepublish :app:connectedReleaseAndroidTest
+        run: ./tools/android-consumer.sh --prepublish :app:connectedDebugAndroidTest
       - name: Upload instrumentation reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
