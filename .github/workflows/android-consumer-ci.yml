@@ -100,9 +100,6 @@ jobs:
             if [ "$status" -ne 0 ]; then
               print_emulator_diagnostics
             fi
-            if [ -n "$emulator_pid" ] && kill -0 "$emulator_pid" 2>/dev/null; then
-              kill "$emulator_pid" || true
-            fi
             exit "$status"
           }
           trap cleanup_emulator EXIT
