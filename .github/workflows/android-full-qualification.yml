@@ -66,6 +66,7 @@ jobs:
         timeout-minutes: 25
         run: |
           set -euo pipefail
+          export ANDROID_AVD_HOME="${RUNNER_TEMP}/avd"
           avd_name="pica-api-${{ matrix.api-level }}"
           emulator_log="${RUNNER_TEMP}/emulator.log"
           emulator_pid=""
