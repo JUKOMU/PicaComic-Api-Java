@@ -5,3 +5,8 @@
 # (Intrinsics, Lambda, LazyKt, ...), which fails the minified release smoke.
 -keep class kotlin.** { *; }
 -keep class kotlinx.** { *; }
+
+# The instrumented test APK is minified separately from the app APK, so the smoke
+# entry point and the Pica API must keep their names and members across the two
+# APKs or the test resolves to NoClassDefFoundError at runtime.
+-keep class io.github.jukomu.picacomic.** { *; }
