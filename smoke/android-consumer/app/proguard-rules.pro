@@ -10,3 +10,8 @@
 # entry point and the Pica API must keep their names and members across the two
 # APKs or the test resolves to NoClassDefFoundError at runtime.
 -keep class io.github.jukomu.picacomic.** { *; }
+
+# Core library desugaring rewrites java.nio.file / java.time into the j$ package;
+# R8 would otherwise strip the methods, failing the minified release smoke with
+# NoSuchMethodError (e.g. j$.nio.file.Path.getFileSystem, j$.time.Duration.ofSeconds).
+-keep class j$.** { *; }
