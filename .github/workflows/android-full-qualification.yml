@@ -21,7 +21,6 @@ permissions:
   contents: read
 
 env:
-  GRADLE_USER_HOME: ${{ runner.temp }}/picacomic-gradle-home
   QUALIFICATION_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
 
 jobs:
@@ -33,6 +32,8 @@ jobs:
         api-level: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
     runs-on: ubuntu-latest
     steps:
+      - name: Configure isolated Gradle home
+        run: echo "GRADLE_USER_HOME=${RUNNER_TEMP}/picacomic-gradle-home" >> "$GITHUB_ENV"
       - name: Check out the exact candidate source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -61,30 +62,90 @@ jobs:
       - name: Build the pre-publish consumer artifact
         if: github.event_name != 'workflow_run'
         run: ./tools/android-consumer.sh --prepublish :app:assembleDebug :app:lintDebug :app:assembleRelease
-      - name: Create API ${{ matrix.api-level }} emulator
+      - name: Enable KVM group permissions
         run: |
-          sdkmanager --install "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
-          echo no | avdmanager create avd --force --name "pica-api-${{ matrix.api-level }}" \
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Create API ${{ matrix.api-level }} emulator
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          avd_name="pica-api-${{ matrix.api-level }}"
+          emulator_log="${RUNNER_TEMP}/emulator.log"
+          emulator_pid=""
+          emulator_serial=""
+
+          print_emulator_diagnostics() {
+            echo '--- adb devices ---'
+            timeout 10s adb devices || true
+            echo '--- emulator process ---'
+            if [ -n "$emulator_pid" ]; then
+              ps -p "$emulator_pid" -o pid=,stat=,cmd= || true
+            fi
+            echo '--- emulator.log ---'
+            if [ -f "$emulator_log" ]; then
+              cat "$emulator_log"
+            else
+              echo '(emulator.log not created)'
+            fi
+          }
+
+          cleanup_emulator() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              print_emulator_diagnostics
+            fi
+            exit "$status"
+          }
+          trap cleanup_emulator EXIT
+
+          timeout 10m sdkmanager --install "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
+          export ANDROID_AVD_HOME="${RUNNER_TEMP}/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | timeout 2m avdmanager create avd --force --name "$avd_name" \
             --package "system-images;android-${{ matrix.api-level }};google_apis;x86_64" --device pixel_2
-          nohup emulator -avd "pica-api-${{ matrix.api-level }}" -no-window -no-audio \
-            -no-boot-anim -gpu swiftshader_indirect >"${{ runner.temp }}/emulator.log" 2>&1 &
-          adb wait-for-device
-          for attempt in $(seq 1 60); do
-            booted=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+          "${ANDROID_HOME}/emulator/emulator" -list-avds | grep -qx "$avd_name" || {
+            echo "::error::AVD not visible to emulator"; ls -la "$ANDROID_AVD_HOME" || true; exit 1; }
+          timeout 30s adb start-server
+          nohup "${ANDROID_HOME}/emulator/emulator" -avd "$avd_name" -no-window -no-audio -no-boot-anim \
+            -no-snapshot -wipe-data -no-metrics -gpu swiftshader_indirect \
+            >"$emulator_log" 2>&1 &
+          emulator_pid=$!
+
+          for attempt in $(seq 1 150); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo "emulator process $emulator_pid exited before ADB became ready"
+              exit 1
+            fi
+            if emulator_serial="$(timeout 10s adb devices 2>/dev/null | awk '$1 ~ /^emulator-/ && $2 == "device" && !found { print $1; found=1 }')"; then
+              if [ -n "$emulator_serial" ]; then break; fi
+            fi
+            sleep 2
+          done
+          test -n "$emulator_serial"
+
+          for attempt in $(seq 1 150); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo "emulator process $emulator_pid exited before boot completed"
+              exit 1
+            fi
+            booted="$(timeout 10s adb -s "$emulator_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
             if [ "$booted" = "1" ]; then break; fi
             sleep 2
           done
-          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
-          adb shell input keyevent 82 || true
-      - name: Run API ${{ matrix.api-level }} release instrumentation
+          test "$(timeout 10s adb -s "$emulator_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" = "1"
+          timeout 30s adb -s "$emulator_serial" shell input keyevent 82 || true
+      - name: Run API ${{ matrix.api-level }} instrumentation
         if: github.event_name == 'workflow_run'
         run: |
           gradle -p smoke/android-consumer --no-daemon --no-build-cache \
             --refresh-dependencies --dependency-verification=strict \
-            :app:connectedReleaseAndroidTest
+            :app:connectedDebugAndroidTest
       - name: Run API ${{ matrix.api-level }} pre-publish instrumentation
         if: github.event_name != 'workflow_run'
-        run: ./tools/android-consumer.sh --prepublish :app:connectedReleaseAndroidTest
+        run: ./tools/android-consumer.sh --prepublish :app:connectedDebugAndroidTest
       - name: Write machine-readable qualification evidence
         if: always()
         run: |
@@ -108,6 +169,7 @@ jobs:
         with:
           name: android-qualification-api-${{ matrix.api-level }}
           path: |
+            ${{ runner.temp }}/emulator.log
             qualification/
             smoke/android-consumer/app/build/reports/
             smoke/android-consumer/app/build/outputs/androidTest-results/

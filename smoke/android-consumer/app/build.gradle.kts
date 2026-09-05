@@ -27,7 +27,7 @@ android {
 
     testOptions {
         execution = "ANDROIDX_TEST_ORCHESTRATOR"
-        testBuildType = "release"
+        testBuildType = "debug"
     }
 
     compileOptions {
