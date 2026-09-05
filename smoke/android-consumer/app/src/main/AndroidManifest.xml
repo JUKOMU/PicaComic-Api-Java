@@ -5,5 +5,6 @@
         android:allowBackup="false"
         android:label="PicaComic consumer smoke"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 </manifest>
